@@ -616,6 +616,33 @@ function getLanternGlow(){
   gctx.fillStyle=g;gctx.beginPath();gctx.arc(32,32,32,0,Math.PI*2);gctx.fill();
   return lanternGlowCanvas;
 }
+let logo711Canvas=null;
+function get711Logo(){
+  if(logo711Canvas)return logo711Canvas;
+  logo711Canvas=document.createElement('canvas');logo711Canvas.width=160;logo711Canvas.height=160;
+  const c=logo711Canvas.getContext('2d');
+  c.fillStyle='#008139';
+  if(c.roundRect){c.beginPath();c.roundRect(0,0,160,160,22);c.fill()}
+  else{c.fillRect(0,0,160,160)}
+  c.fillStyle='#ffffff';
+  if(c.roundRect){c.beginPath();c.roundRect(10,10,140,140,16);c.fill()}
+  else{c.fillRect(10,10,140,140)}
+  c.fillStyle='#f58220';
+  c.beginPath();
+  c.moveTo(26,26);c.lineTo(134,26);c.lineTo(134,54);c.lineTo(56,54);c.lineTo(42,66);c.lineTo(26,66);
+  c.closePath();c.fill();
+  c.fillStyle='#ee1c25';
+  c.beginPath();
+  c.moveTo(102,54);c.lineTo(134,54);c.lineTo(84,136);c.lineTo(52,136);
+  c.closePath();c.fill();
+  c.fillStyle='#ffffff';
+  c.fillRect(16,70,128,28);
+  c.fillStyle='#008139';
+  c.font='900 20px "Arial Black",sans-serif';
+  c.textAlign='center';c.textBaseline='middle';
+  c.fillText('ELEVEn',80,84);
+  return logo711Canvas;
+}
 function skyline(t){
   const k=H/560,b=HZ+2,off=-camX*6,ro=-camX*12;
   const g=ctx.createLinearGradient(0,0,0,HZ);g.addColorStop(0,rgb(cur.t));g.addColorStop(1,rgb(cur.b));ctx.fillStyle=g;ctx.fillRect(0,0,W,b);
@@ -876,35 +903,34 @@ function bldg(m,sd,zn,zf,Z,par){ // ห้องแถวหลากสไต�
     fq(xs,xw,zn,0,2.5,'#e0e4e8'); // ผนังด้านข้างตึกหันหาผู้เล่น
     hq(xs,xw,zn,zf,2.5,'#c4c8d0'); // ดาดฟ้า
     
-    // 2. ป้าย Fascia คาด 3 แถบสีเต็มหน้ากว้างร้านริมแม่น้ำ (ส้ม, เขียว, แดง)
+    // 2. ป้าย Fascia คาด 3 แถบสี (ส้ม, เขียว, แดง) ทั้งด้านริมน้ำและด้านหน้าตึก
     const signTop=2.45,signBot=1.65,bH=(signTop-signBot)/3;
     vq(xs,zn,zf,signTop-bH,signTop,'#f58220');      // แถบส้มบน
     vq(xs,zn,zf,signBot+bH,signTop-bH,'#008139'); // แถบเขียวกลาง
     vq(xs,zn,zf,signBot,signBot+bH,'#ee1c25');      // แถบแดงล่าง
+    fq(xs,xw,zn,signTop-bH,signTop,'#f58220');
+    fq(xs,xw,zn,signBot+bH,signTop-bH,'#008139');
+    fq(xs,xw,zn,signBot,signBot+bH,'#ee1c25');
 
-    // 3. ป้ายโลโก้ 7-Eleven กล่องสีขาวอันเป็นเอกลักษณ์ตรงกลางป้ายริมน้ำ
-    const zm=(zn+zf)/2;
-    const logoZ=1.4;
-    vq(xs,zm+logoZ/2,zm-logoZ/2,signBot,signTop,'#ffffff');
-    const logoP=P(xs,zm,(signTop+signBot)/2);
-    if(logoP.s>3){
-      const lW=logoP.s*1.1,lH=(signTop-signBot)*logoP.s*.95;
-      RR(logoP.x-lW/2,logoP.y-lH/2,lW,lH,2,'#ffffff',1.2);
-      if(logoP.s>4.5){
-        ctx.font=`900 ${lH*.68}px Mali,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillStyle='#ee1c25';ctx.fillText('7',logoP.x,logoP.y-lH*.05);
-        ctx.fillStyle='#008139';ctx.font=`900 ${lH*.22}px sans-serif`;
-        ctx.fillText('ELEVEN',logoP.x,logoP.y+lH*.15);
-      }
-      glow(logoP.x,logoP.y,logoP.s*1.3);
+    // 3. ป้ายโลโก้ 7-Eleven แท้ (Official Logo Badge: กล่องเขียว กรอบขาว เลข 7 ส้ม/แดง พร้อมข้อความ ELEVEn)
+    const lSprite=get711Logo();
+    
+    // โลโก้ด้านหน้าตึกหันหาผู้เล่นโดยตรง (เห็นชัดเจน ไม่ซ้อนทับ)
+    const frontLogoP=P((xs+xw)*.5,zn,(signTop+signBot)*.5);
+    if(frontLogoP.s>3.2){
+      const sz=Math.min((signTop-signBot)*frontLogoP.s*1.2,Math.abs(xw-xs)*frontLogoP.s*.75);
+      ctx.drawImage(lSprite,frontLogoP.x-sz*.5,frontLogoP.y-sz*.5,sz,sz);
+      if(lit)glow(frontLogoP.x,frontLogoP.y,frontLogoP.s*1.2);
     }
 
-    // ป้ายไฟยื่นขวางทางเดิน (Blade Sign) หันหาเรือที่แล่นมาตามน้ำ
-    fq(xs-sd*.6,xs,zm,signBot,signTop,'#ffffff');
-    const pBlade=P(xs-sd*.3,zm,(signTop+signBot)/2);
-    if(pBlade.s>4){
-      ctx.font=`900 ${pBlade.s*.3}px Mali,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
-      ctx.fillStyle='#ee1c25';ctx.fillText('7',pBlade.x,pBlade.y-.03*pBlade.s);
+    // โลโก้บนแผงป้ายริมน้ำ (Side Riverbank Logo)
+    const zm=(zn+zf)/2;
+    vq(xs,zm+.7,zm-.7,signBot,signTop,'#ffffff');
+    const sideLogoP=P(xs,zm,(signTop+signBot)*.5);
+    if(sideLogoP.s>3.2){
+      const sz=(signTop-signBot)*sideLogoP.s*.95;
+      ctx.drawImage(lSprite,sideLogoP.x-sz*.5,sideLogoP.y-sz*.5,sz,sz);
+      if(lit)glow(sideLogoP.x,sideLogoP.y,sideLogoP.s*1.1);
     }
 
     // 4. ประตูกระจกบานใหญ่และประตูเลื่อนอัตโนมัติหันหาแม่น้ำ
@@ -1437,21 +1463,27 @@ function render(al,fd){
   WR.length=0;glows.length=0;wp[0]=wp[1]=null;
   const OVERPASS_GAP=280;
   const minBtsM=Math.floor((dist-8)/OVERPASS_GAP),maxBtsM=Math.ceil((dist+85)/OVERPASS_GAP);
+  // 1. ถนน แม่น้ำ และตลิ่ง (Street, River Surface, Canal Banks)
   for(let m=m1;m>=m0;m--){
     const fw=m*seg,zn=Math.min(dist-fw,7.2),zf=Math.max(dist-fw-seg,-90);if(zf>7.2||zn<-90)continue;
     const par=m&1,Z=zoneAt(fw);
     street(m,zn,zf);quad(-BANK,BANK,zn,zf,WC[Z][par]);
     for(let j=0;j<3;j++){const x1=(hash(m*5+j)*2-1)*3.6,zz=zn-seg*(.2+.28*j);hq(x1,x1+.8+hash(m*5+j+50)*1.6,zz,zz-.16,0,'rgba(255,255,255,.3)')}
     quad(-60,-BANK,zn,zf,GC[par]);quad(BANK,60,zn,zf,GC[par]);
+  }
 
-    // วาดสะพานรถไฟฟ้า BTS/MRT ก่อนตึกและแลนด์มาร์ก (สะพานอยู่ข้างหลัง ตึกอยู่ข้างหน้า ไม่บังตึก)
-    for(let bm=minBtsM;bm<=maxBtsM;bm++){
-      const bz=dist-bm*OVERPASS_GAP;
-      if((bz<=zn&&bz>zf)||(m===m0&&bz>zn&&bz<=7.5)){
-        drawBtsOverpass(bz,s.t);
-      }
+  // 2. Layer สะพานรถไฟฟ้า MRT/BTS (อยู่วงหลังตึก ไม่บังตึก - Behind building layer)
+  for(let bm=maxBtsM;bm>=minBtsM;bm--){
+    const bz=dist-bm*OVERPASS_GAP;
+    if(bz>-85&&bz<=7.2){
+      drawBtsOverpass(bz,s.t);
     }
+  }
 
+  // 3. Layer อาคาร ตึกแถว และแลนด์มาร์ก (Building & Landmark Layer - วาดอยู่ด้านหน้าสะพาน ทำให้สะพานไม่อยู่ Layer แรกและไม่บังตึก)
+  for(let m=m1;m>=m0;m--){
+    const fw=m*seg,zn=Math.min(dist-fw,7.2),zf=Math.max(dist-fw-seg,-90);if(zf>7.2||zn<-90)continue;
+    const par=m&1,Z=zoneAt(fw);
     landmark(m,dist);bldg(m,-1,zn,zf,Z,par);bldg(m,1,zn,zf,Z,par);roadside(m,dist);
   }
   post();
