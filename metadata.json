@@ -1,0 +1,8 @@
+{
+  "name": "Where is the duck going?",
+  "description": "เป็ดไปไหนวะ - พาเป็ดหลบสิ่งกีดขวางกลางถนนน้ำท่วมกรุงเทพฯ สะบัดเชือกห่วงยางช่วยคน",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
