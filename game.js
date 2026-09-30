@@ -16,7 +16,8 @@ const ROPE={L:2.5,m:1,k:400,cRope:16,cX:2,cZ:3,Lmax:3.5,Tmax:60,vxMax:6,vPhysMax
 const DUCK={omega:16,zeta:.5};
 const JUMP={v0:9.5,g:26};
 const RESCUE={radius:.5};
-const LANE=[-2,0,2],CAM={z:8,y:2.4},BANK=4.4;
+const VIC_MSGS=['ช่วยด้วย','รวยไม่ไหวแล้ว!'];
+const LANE=[-2,0,2],CAM={z:8,y:2.4},BANK=4.4,SPEEDBOAT_RZ=22;
 let S,camX=0,dbg=false,testMode=false,best=0;
 
 try{best=+localStorage.getItem('duckBest')||0}catch(e){}
@@ -210,6 +211,56 @@ function stepTube(t,duck,v,dt){
   }
   t.vx=clamp(t.vx,-ROPE.vxMax,ROPE.vxMax); // (4) hard clamp กันหลุด
 }
+const PLAYER_Y_RATIO = 0.24;
+function getPlayerYOff(){
+  return Math.round(H * PLAYER_Y_RATIO);
+}
+function getVisualZ(baseZ){
+  const pyOff = getPlayerYOff();
+  const d0 = Math.max(0.8, CAM.z - baseZ);
+  const s0 = F / d0;
+  const yBase = CAM.y * s0;
+  const targetY = yBase + pyOff;
+  if(targetY <= 0) return baseZ;
+  return CAM.z - (CAM.y * F) / targetY;
+}
+function getPlayerHitbox(s, al = 1){
+  const pyOff = getPlayerYOff();
+  const d = s.duck, t = s.tube;
+  const run = s.state === 'RUN';
+  const dx = lerp(d.px, d.x, run ? al : 1);
+  const tx = lerp(t.px, t.x, run ? al : 1);
+  const tz = lerp(t.pz, t.z, run ? al : 1);
+
+  // 1. พิกัด 2D จริงบน Canvas ของเป็ด (Base Sprite Coordinates)
+  const pd = P(dx, 0);
+  pd.y += pyOff;
+
+  // 2. คำนวณ Scale และ Z ในโลก 3D ที่สอดคล้องกับพิกัดบนจอ pd.y แบบ 1:1
+  const targetY_duck = Math.max(0.1, pd.y - HZ);
+  const s_duck_depth = targetY_duck / CAM.y;
+  const duckZ = CAM.z - F / s_duck_depth;
+  const ratio_duck = pd.s / s_duck_depth;
+  const duckEffX = camX + (dx - camX) * ratio_duck;
+  const duckEffR = d.r * ratio_duck;
+
+  // 3. พิกัด 2D จริงบน Canvas ของคนบนห่วงยาง (Base Sprite Coordinates)
+  const pt = P(tx, tz);
+  pt.y += pyOff;
+
+  // 4. คำนวณ Scale และ Z ในโลก 3D ที่สอดคล้องกับพิกัดบนจอ pt.y แบบ 1:1
+  const targetY_tube = Math.max(0.1, pt.y - HZ);
+  const s_tube_depth = targetY_tube / CAM.y;
+  const tubeZ = CAM.z - F / s_tube_depth;
+  const ratio_tube = pt.s / s_tube_depth;
+  const tubeEffX = camX + (tx - camX) * ratio_tube;
+  const tubeEffR = t.r * ratio_tube;
+
+  return {
+    duck: { x: duckEffX, z: duckZ, r: duckEffR, pd },
+    tube: { x: tubeEffX, z: tubeZ, r: tubeEffR, pt }
+  };
+}
 function circleAABB(cx,cz,r,o){
   const nx=clamp(cx,o.x-o.hw,o.x+o.hw),nz=clamp(cz,o.z-o.hd,o.z+o.hd),dx=cx-nx,dz=cz-nz;
   return dx*dx+dz*dz<r*r;
@@ -312,7 +363,7 @@ function updatePhase(s){
 
 function newGame(){
   S={state:'MENU',tuns:[],tunEnd:0,tun:0,zt:0,dist:0,v:10,score:0,combo:0,rescued:0,pass:0,gap:10,grace:0,slow:0,shake:0,t:0,fx:[],obs:[],vic:[],wakes:[],splashes:[],lastDuckWake:0,lastTubeWake:0,
-    duck:{x:0,px:0,vx:0,lane:1,r:.35},tube:{x:0,px:0,z:2.6,pz:2.6,vx:0,vz:0,r:.6,T:0},jump:{y:0,py:0,vy:0,air:false},
+    duck:{x:0,px:0,vx:0,lane:1,r:.46},tube:{x:0,px:0,z:2.6,pz:2.6,vx:0,vz:0,r:.75,T:0},jump:{y:0,py:0,vy:0,air:false},
     phase:PHASES.NORMAL,phaseEndDist:0,specialCooldownUntil:35,lastSpecialPhase:null};
   input.queue.length=0;input.jumpAt=0;
 }
@@ -322,7 +373,8 @@ function spawn(){
   // 1. เฟสม้าศึกวิ่งเตลิด (Horse Stampede) - ความถี่สูงแต่คงความปลอดภัยขั้นต่ำ
   if(s.phase === PHASES.HORSE_STAMPEDE){
     const dir = Math.random() < 0.5 ? -1 : 1;
-    s.obs.push({npc: 1, type: 'horse', x: -dir * 4, z, hw: 0.9, hd: 1, h: 2, dir, st: 'wait'});
+    // ปรับ Hitbox ม้า: กระชับขนาดลำตัวตรงกลาง (hw: 0.48, hd: 0.28, h: 1.8) ไม่ชนหัว/หาง/ขอบข้างเกินจริง
+    s.obs.push({npc: 1, type: 'horse', x: -dir * 4, z, hw: 0.48, hd: 0.28, h: 1.8, dir, st: 'wait'});
     sfx.play('horse_run');
     // Hard Minimum Cap: รับประกันเวลาตอบสนองการสลับเลน (t_dodge >= 0.47s) ไม่ให้ม้าซ้อนกัน
     const minGap = Math.max(12.0, s.v * 0.78 + 2.0);
@@ -336,18 +388,19 @@ function spawn(){
     const rushLanes = [0, 1, 2].filter(l => l !== freeLane);
     const count = Math.random() < 0.45 ? 2 : 1;
     for(let i = 0; i < count; i++){
-      s.obs.push({npc: 1, type: 'speedboat', x: LANE[rushLanes[i]], z: -95, hw: 0.8, hd: 1.4, h: 2.2, rz: 8});
+      // ปรับ Hitbox เรือด่วน: ลดความหนาแกน Z และความกว้าง X (hw: 0.48, hd: 0.38, h: 2.0) หลบข้ามเลนได้ปลอดภัย ไม่โดนคลื่นน้ำชน
+      s.obs.push({npc: 1, type: 'speedboat', x: LANE[rushLanes[i]], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
     }
     sfx.play('speedboat_warn');
-    // Hard Minimum Cap: คำนวณตามความเร็วสัมพัทธ์ (s.v + 8) ให้ผู้เล่นมีเวลาหลบเข้าเลนว่างอย่างน้อย ~0.70 วินาทีเสมอ
-    const minGap = Math.max(16.0, (s.v + 8) * 0.62 + 2.5);
+    // Hard Minimum Cap: คำนวณตามความเร็วสัมพัทธ์ (s.v + SPEEDBOAT_RZ) ให้ผู้เล่นมีเวลาหลบเข้าเลนว่างอย่างน้อย ~0.70 วินาทีเสมอ
+    const minGap = Math.max(16.0, (s.v + SPEEDBOAT_RZ) * 0.62 + 2.5);
     return minGap + Math.random() * 3.0;
   }
 
   // 3. เฟสกู้ภัยฉุกเฉิน (Rescue Mission) - ถี่ขึ้นแบบคอมโบกระหน่ำ
   if(s.phase === PHASES.RESCUE_MISSION){
     const l = Math.floor(Math.random() * 3);
-    s.vic.push({x: LANE[l], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy'});
+    s.vic.push({x: LANE[l], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
     // Hard Minimum Cap: เว้นระยะให้ห่วงยางฟิสิกส์คืนตัวและเหวี่ยงรับคนถัดไปได้ทัน
     const minGap = Math.max(8.0, s.v * 0.52 + 1.5);
     return minGap + Math.random() * 2.0;
@@ -355,8 +408,8 @@ function spawn(){
 
   // 4. เฟสวิบากท่อนไม้ (Log Hurdles) - ความถี่สูงแบบ Rhythm Jump พร้อม Hard Minimum Cap ทางคณิตศาสตร์
   if(s.phase === PHASES.LOG_HURDLES){
-    // ปรับ Hitbox ท่อนไม้: ลดความหนา Z-depth (hd = 0.32) และความสูงที่ต้องกระโดดพ้น (h = 0.5) ให้กระโดดข้ามง่ายขึ้น โดยคงความกว้างเต็มจอ (hw = 3.2)
-    s.obs.push({x: 0, z, hw: 3.2, hd: 0.32, h: 0.5, type: 'wide'});
+    // ปรับ Hitbox ท่อนไม้: ลดความหนาแกน Z ให้บางเฉียบ (hd = 0.05) และความสูงต่ำ (h = 0.18) กระโดดข้ามพ้นง่าย ไม่ชนอากาศ
+    s.obs.push({x: 0, z, hw: 3.1, hd: 0.05, h: 0.18, type: 'wide'});
     // Hard Minimum Cap ทางคณิตศาสตร์ (Anti-Impossible Safety Cap):
     // เวลาลอยตัว t_air = 2 * v0 / g = 2 * 9.5 / 26 ≈ 0.73 วินาที
     // เวลาตอบสนองและเตรียมกระโดดรอบถัดไป t_prep >= 0.30 วินาที (รวม cycle time >= 1.03 วินาที)
@@ -368,24 +421,24 @@ function spawn(){
   // 5. เฟสปกติ (Normal Phase) - การสุ่มแบบผสมตามระยะทางเดิมของเกม
   const r = Math.random(), d = s.dist, l = Math.floor(Math.random() * 3);
   if(r < 0.24){
-    s.vic.push({x: LANE[Math.random() < 0.5 ? 0 : 2], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy'});
+    s.vic.push({x: LANE[Math.random() < 0.5 ? 0 : 2], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
   } else if(r < 0.36){
-    s.obs.push({x: 0, z, hw: 3.2, hd: 0.32, h: 0.5, type: 'wide'});
+    s.obs.push({x: 0, z, hw: 3.1, hd: 0.05, h: 0.18, type: 'wide'});
     return Math.max(18, s.v * 1.35) + Math.random() * 4;
   } else if(r < 0.48 && d > 150){
     const dir = Math.random() < 0.5 ? -1 : 1;
-    s.obs.push({npc: 1, type: 'horse', x: -dir * 4, z, hw: 0.9, hd: 1, h: 2, dir, st: 'wait'});
+    s.obs.push({npc: 1, type: 'horse', x: -dir * 4, z, hw: 0.48, hd: 0.28, h: 1.8, dir, st: 'wait'});
     sfx.play('horse_run');
   } else if(r < 0.58 && d > 300){
-    s.obs.push({npc: 1, type: 'speedboat', x: LANE[l], z: -95, hw: 0.8, hd: 1.4, h: 2.2, rz: 8});
+    s.obs.push({npc: 1, type: 'speedboat', x: LANE[l], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
     sfx.play('speedboat_warn');
-    return Math.max(20, (s.v + 8) * 0.9) + Math.random() * 4;
+    return Math.max(20, (s.v + SPEEDBOAT_RZ) * 0.9) + Math.random() * 4;
   } else if(r < 0.72){
-    // ปรับ Hitbox เรือแจว (Rowboat): ปรับสัดส่วนให้แนบสนิทกับตัวโมเดลเรือจริง (hw: 0.78, hd: 0.48, h: 1.0)
-    s.obs.push({npc: 1, type: 'rowboat', x: LANE[l], z, hw: 0.78, hd: 0.48, h: 1.0, rz: -2, vx: (Math.random() < 0.5 ? -1 : 1) * 0.5});
+    // ปรับ Hitbox เรือแจว (Rowboat): ปรับสัดส่วนให้กระชับปลอดภัย (hw: 0.48, hd: 0.24, h: 0.85)
+    s.obs.push({npc: 1, type: 'rowboat', x: LANE[l], z, hw: 0.48, hd: 0.24, h: 0.85, rz: -2, vx: (Math.random() < 0.5 ? -1 : 1) * 0.5});
   } else {
     const ls = [0, 1, 2].sort(() => Math.random() - 0.5), n = Math.random() < 0.4 ? 2 : 1;
-    for(let i = 0; i < n; i++) s.obs.push({x: LANE[ls[i]], z, hw: 0.8, hd: 0.32, h: 0.5, type: 'log'});
+    for(let i = 0; i < n; i++) s.obs.push({x: LANE[ls[i]], z, hw: 0.60, hd: 0.05, h: 0.18, type: 'log'});
   }
   return Math.max(12, s.v * 0.85) + Math.random() * 4;
 }
@@ -421,7 +474,7 @@ function step(dt){
   if(s.slow>0)s.slow-=dt;if(s.grace>0)s.grace-=dt;if(s.shake>0)s.shake-=dt;
   s.v=Math.min(22,10+s.dist*.012);
   stepDuck(s.duck,wd);stepJump(s,wd);
-  s.tube.r=(.6+.05*s.pass)*(1-.1*clamp((s.v-10)/12,0,1));
+  s.tube.r=(.75+.03*s.pass)*(1-.08*clamp((s.v-10)/12,0,1));
   stepTube(s.tube,s.duck,s.v,wd);
   const dz=s.v*wd;s.dist+=dz;s.score+=dz*.5;
   if(!s.jump.air&&(s.t-(s.lastDuckWake||0)>.04)){
@@ -461,13 +514,24 @@ function step(dt){
   updatePhase(s);
   s.gap-=dz;if(s.gap<=0){s.gap=Math.max(s.gap,0)+spawn()}
   const jy=s.jump.y;
+  // Hitbox ของเป็ดและคนบนห่วงยาง ผูกพิกัดตรงกับตำแหน่งที่วาดภาพบน Canvas แบบ 100% (Hard-Bound Hitbox)
+  const hb = getPlayerHitbox(s, 1);
   for(let i=s.obs.length-1;i>=0;i--){
     const o=s.obs[i];o.z+=dz+(o.rz||0)*wd;if(o.npc)npcStep(o,s,wd);
     if(o.z>14){s.obs.splice(i,1);continue}
-    if(o.z<-4||o.z>s.tube.z+4||jy>=o.h)continue; // กระโดดสูงกว่าสิ่งกีดขวาง = ปลอดภัยทั้งเป็ดและห่วงยาง
+    if(o.z<hb.duck.z-6||o.z>hb.tube.z+3)continue;
+    // เรือแจว (Rowboat) เป็นสิ่งกีดขวางทรงสูง ไม่สามารถกระโดดข้ามได้ทุกกรณี (Un-jumpable absolute blocker)
+    // หากเป็นสิ่งกีดขวางอื่น (เช่น ขอนไม้) และผู้เล่นกระโดดสูงกว่าความสูงสิ่งกีดขวาง (jy >= o.h) ให้ข้ามผ่านได้ปลอดภัย
+    if(o.type!=='rowboat'&&jy>=o.h)continue;
     if(!testMode){
-      if(circleAABB(s.duck.x,0,s.duck.r,o))return die('เป็ดชนสิ่งกีดขวาง');
-      if(s.grace<=0&&circleAABB(s.tube.x,s.tube.z,s.tube.r,o))return die('คนบนห่วงยางชนเข้าแล้ว');
+      // ตรวจจับการชนอิงพิกัดฐานสไปรต์จริงของเป็ด (Hard-bound to bottom-center of Duck sprite)
+      if(circleAABB(hb.duck.x,hb.duck.z,hb.duck.r,o)){
+        return die(o.type==='rowboat'?'เป็ดชนเรือแจว (ห้ามกระโดดข้ามเรือแจว)':'เป็ดชนสิ่งกีดขวาง');
+      }
+      // ตรวจจับการชนอิงพิกัดฐานสไปรต์จริงของคนบนห่วงยาง (Hard-bound to bottom-center of Tube sprite)
+      if(s.grace<=0&&circleAABB(hb.tube.x,hb.tube.z,hb.tube.r,o)){
+        return die(o.type==='rowboat'?'ห่วงยางชนเรือแจว':'คนบนห่วงยางชนเข้าแล้ว');
+      }
     }
   }
   for(let i=s.vic.length-1;i>=0;i--){
@@ -481,11 +545,11 @@ function step(dt){
         s.wakes.push({x:v.x+(Math.random()-.5)*.2,z:v.z,r:.18,maxR:1.1,life:0,maxLife:.45,type:'droplet'});
       }
     }
-    if(touchVictim(s.tube,v)){ // แตะที่ความเร็วใดก็ได้ = ช่วยสำเร็จทันที
+    if(touchVictim({x:hb.tube.x,z:hb.tube.z,r:hb.tube.r},v)){ // แตะที่ความเร็วใดก็ได้ = ช่วยสำเร็จทันที
       s.combo++;s.rescued++;s.pass=Math.min(3,s.pass+1);s.score+=100*Math.min(s.combo,10);
       s.slow=.3;s.grace=.15;sfx.play('rescue');fx('ช่วยได้! x'+s.combo,'#7dff9a');s.vic.splice(i,1);continue;
     }
-    if(v.z>s.tube.z+1.5){if(s.combo>0)fx('พลาด!','#ff8a7d');s.combo=0;s.vic.splice(i,1)}
+    if(v.z>hb.tube.z+1.5){if(s.combo>0)fx('พลาด!','#ff8a7d');s.combo=0;s.vic.splice(i,1)}
   }
 }
 function die(why){
@@ -600,7 +664,7 @@ function TRI(pts,f,l){ctx.beginPath();pts.forEach((q,i)=>i?ctx.lineTo(q[0],q[1])
 /* คลื่นน้ำและหยดน้ำกระจาย (Water Wakes & Splashes) */
 function drawWakes(zoff){
   if(!S.wakes)return;
-  const pOff = Math.round(H * 0.12);
+  const pOff = getPlayerYOff();
   for(let i=0;i<S.wakes.length;i++){
     const w=S.wakes[i],z=w.z+zoff;
     if(z<-10||z>14)continue;
@@ -622,7 +686,7 @@ function drawWakes(zoff){
 }
 function drawSplashes(zoff){
   if(!S.splashes)return;
-  const pOff = Math.round(H * 0.12);
+  const pOff = getPlayerYOff();
   for(let i=0;i<S.splashes.length;i++){
     const sp=S.splashes[i],z=sp.z+zoff;
     if(z<-10||z>14||sp.y<=0)continue;
@@ -1291,14 +1355,15 @@ function drawVic(v,z,t){
     circ(-.25*u,-.62*u,.05*u);circ(.25*u,-.62*u,.05*u);
   }
 
-  // 7. ป้ายข้อความ "ช่วยด้วย!" และลูกศรชี้ลอยอยู่เหนือหัว
+  // 7. ป้ายข้อความขอความช่วยเหลือ และลูกศรชี้ลอยอยู่เหนือหัว
   const by=-1.35*u-Math.abs(Math.sin(t*5))*.15*u;
   TRI([[-.26*u,by-.36*u],[.26*u,by-.36*u],[0,by]],'#39ff14',Math.max(0.8,vw*0.85));
   if(u>14){
+    const msg = v.txt || 'ช่วยด้วย';
     ctx.font=`700 ${Math.max(12,.28*u)}px Mali,sans-serif`;
     ctx.textAlign='center';ctx.lineWidth=Math.max(1.5,Math.min(3,u*0.03));
-    ctx.strokeStyle=INK;ctx.strokeText('ช่วยด้วย!',0,by-.55*u);
-    ctx.fillStyle='#fff';ctx.fillText('ช่วยด้วย!',0,by-.55*u);
+    ctx.strokeStyle=INK;ctx.strokeText(msg,0,by-.55*u);
+    ctx.fillStyle='#fff';ctx.fillText(msg,0,by-.55*u);
   }
 
   ctx.restore();
@@ -2325,24 +2390,24 @@ function render(al,fd){
   drawWakes(zoff);
   const pl=.5+.5*Math.sin(s.t*10);
   s.obs.forEach(o=>{if(o.type==='speedboat'&&o.z+zoff<-2){const zb=o.z+zoff-1.4;hq(o.x-.85,o.x+.85,3,zb,0,`rgba(255,45,85,${.14+.16*pl})`);poly(P(o.x-.5,zb,0),P(o.x+.5,zb,0),P(o.x+2,zb-5,0),P(o.x-2,zb-5,0),'rgba(255,255,255,.5)')}});
-  const pyOff = Math.round(H * 0.12);
-  const d=s.duck,t=s.tube,dx=lerp(d.px,d.x,run?al:1),tx=lerp(t.px,t.x,run?al:1),tz=lerp(t.pz,t.z,run?al:1);
+  const d=s.duck,t=s.tube;
+  const jy=lerp(s.jump.py,s.jump.y,run?al:1);
+  const hb = getPlayerHitbox(s, run ? al : 1);
+  const duckSortZ = (jy > 0.08) ? (hb.duck.z + 0.35) : hb.duck.z;
+
   D_QUEUE.length=0;
   for(let i=0;i<s.obs.length;i++){const o=s.obs[i];D_QUEUE.push({z:o.z+zoff,f:()=>drawObs(o,o.z+zoff)})}
   for(let i=0;i<s.vic.length;i++){const v=s.vic[i];D_QUEUE.push({z:v.z+zoff,f:()=>drawVic(v,v.z+zoff,s.t)})}
-  const jy=lerp(s.jump.py,s.jump.y,run?al:1);
-  D_QUEUE.push({z:0,f:()=>{const pd=P(dx,0);pd.y+=pyOff;drawDuck(pd,clamp(d.vx*.03,-.25,.25),jy)}});
-  D_QUEUE.push({z:tz,f:()=>{
-    const pd=P(dx,0);pd.y+=pyOff;
-    const pt=P(tx,tz);pt.y+=pyOff;
-    drawRope({x:pd.x,y:pd.y-jy*pd.s,s:pd.s},{x:pt.x,y:pt.y-jy*pt.s,s:pt.s},t.T);
-    drawTube(pt,clamp(t.vx*.04,-.3,.3),s.pass,jy);
+  D_QUEUE.push({z:duckSortZ,f:()=>{drawDuck(hb.duck.pd,clamp(d.vx*.03,-.25,.25),jy)}});
+  D_QUEUE.push({z:hb.tube.z,f:()=>{
+    drawRope({x:hb.duck.pd.x,y:hb.duck.pd.y-jy*hb.duck.pd.s,s:hb.duck.pd.s},{x:hb.tube.pt.x,y:hb.tube.pt.y-jy*hb.tube.pt.s,s:hb.tube.pt.s},t.T);
+    drawTube(hb.tube.pt,clamp(t.vx*.04,-.3,.3),s.pass,jy);
   }});
 
   D_QUEUE.sort((a,b)=>a.z-b.z);
   for(let i=0;i<D_QUEUE.length;i++)D_QUEUE[i].f();
   drawSplashes(zoff);
-  if(dbg){dbgCircle(dx,0,d.r,'#3bd4ff',pyOff);dbgCircle(tx,tz,t.r,'#ffe23b',pyOff)}
+  if(dbg){dbgCircle(hb.duck.x,hb.duck.z,hb.duck.r,'#3bd4ff',0);dbgCircle(hb.tube.x,hb.tube.z,hb.tube.r,'#ffe23b',0)}
   if(s.slow>0){ctx.fillStyle='rgba(255,255,255,.14)';ctx.fillRect(-20,-20,W+40,H+40)}
   ctx.restore();
   for(let i=s.fx.length-1;i>=0;i--){
