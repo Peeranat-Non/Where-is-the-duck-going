@@ -16,7 +16,7 @@ const ROPE={L:2.5,m:1,k:400,cRope:16,cX:2,cZ:3,Lmax:3.5,Tmax:60,vxMax:6,vPhysMax
 const DUCK={omega:16,zeta:.5};
 const JUMP={v0:9.5,g:26};
 const RESCUE={radius:.5};
-const LANE=[-2,0,2],CAM={z:8,y:3.4},BANK=4.4;
+const LANE=[-2,0,2],CAM={z:8,y:2.4},BANK=4.4;
 let S,camX=0,dbg=false,testMode=false,best=0;
 
 try{best=+localStorage.getItem('duckBest')||0}catch(e){}
@@ -227,29 +227,167 @@ function spawnSplash(x,y,z,count=6,power=1.5,dirX=0){
     S.splashes.push({x:x+(Math.random()-.5)*.3,y:y+.04,z:z+(Math.random()-.5)*.3,vx,vy,vz,r:.04+Math.random()*.04,life:0,maxLife:.4+Math.random()*.25});
   }
 }
+/* ---------- ระบบเฟสพิเศษ (Special Event Phase / Wave System) ---------- */
+const PHASES = {
+  NORMAL: 'NORMAL',
+  HORSE_STAMPEDE: 'HORSE_STAMPEDE',
+  SPEEDBOAT_RUSH: 'SPEEDBOAT_RUSH',
+  RESCUE_MISSION: 'RESCUE_MISSION',
+  LOG_HURDLES: 'LOG_HURDLES'
+};
+
+const SPECIAL_PHASE_LIST = [
+  PHASES.LOG_HURDLES,
+  PHASES.HORSE_STAMPEDE,
+  PHASES.SPEEDBOAT_RUSH,
+  PHASES.RESCUE_MISSION
+];
+
+const PHASE_INFO = {
+  [PHASES.NORMAL]: {
+    name: 'ปกติ',
+    banner: null
+  },
+  [PHASES.HORSE_STAMPEDE]: {
+    name: 'ม้าศึกวิ่งเตลิด',
+    banner: '🐴 ระวัง! ม้าศึกวิ่งเตลิดข้ามคลอง!',
+    col: '#ff9234',
+    durDist: 380
+  },
+  [PHASES.SPEEDBOAT_RUSH]: {
+    name: 'เรือด่วนคลั่ง',
+    banner: '🚤 อันตราย! ฝูงเรือด่วนพุ่งสวนเลน!',
+    col: '#ff3366',
+    durDist: 400
+  },
+  [PHASES.RESCUE_MISSION]: {
+    name: 'กู้ภัยฉุกเฉิน',
+    banner: '🏊‍♂️ ภารกิจเร่งด่วน! ช่วยคนตกน้ำ!',
+    col: '#39ff14',
+    durDist: 350
+  },
+  [PHASES.LOG_HURDLES]: {
+    name: 'วิบากท่อนไม้',
+    banner: '🪵 กระโดดด่วน! ท่อนไม้ขวางลำน้ำ!',
+    col: '#ffe11a',
+    durDist: 380
+  }
+};
+
+function selectNextPhase(lastPhase){
+  // สุ่มเลือก 1 ใน 4 เฟสพิเศษโดยให้ทุกเฟสมีโอกาสเกิดเท่ากัน 100% (แก้บั๊ก Log Hurdles หาย)
+  // พร้อมตัดเฟสล่าสุดออกเพื่อป้องกันการสุ่มเจอเฟสเดิมซ้ำ 2 รอบติด
+  const candidates = SPECIAL_PHASE_LIST.filter(p => p !== lastPhase);
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
+function updatePhase(s){
+  if(s.phase === PHASES.NORMAL){
+    // เข้มงวด: ต้องพ้น Cooldown 60 วินาทีเต็มหลังจบเฟสพิเศษก่อนหน้า จึงจะเริ่มเฟสใหม่ได้
+    if(s.t >= (s.specialCooldownUntil || 0)){
+      const chosen = selectNextPhase(s.lastSpecialPhase);
+      s.phase = chosen;
+      s.lastSpecialPhase = chosen;
+      s.phaseEndDist = s.dist + PHASE_INFO[chosen].durDist;
+      
+      fx(PHASE_INFO[chosen].banner, PHASE_INFO[chosen].col);
+      if(chosen === PHASES.HORSE_STAMPEDE) sfx.play('horse_run');
+      else if(chosen === PHASES.SPEEDBOAT_RUSH) sfx.play('speedboat_warn');
+      else if(chosen === PHASES.RESCUE_MISSION) sfx.play('rescue');
+      else if(chosen === PHASES.LOG_HURDLES) sfx.play('jump');
+
+      // เว้นระยะปลอดภัยล่วงหน้าก่อนที่ระลอกพิเศษจะมาถึง
+      s.gap = Math.max(s.gap, 18);
+    }
+  } else {
+    if(s.dist >= s.phaseEndDist){
+      s.phase = PHASES.NORMAL;
+      // กำหนด Strict 60-Second Cooldown: ในช่วง 60 วินาทีนี้จะมีเพียง NORMAL_PHASE เท่านั้น
+      s.specialCooldownUntil = s.t + 60.0;
+      fx('เข้าสู่สภาวะปกติ (พัก 60 วิ)', '#3bd4ff');
+      s.gap = Math.max(s.gap, 16);
+    }
+  }
+}
+
 function newGame(){
   S={state:'MENU',tuns:[],tunEnd:0,tun:0,zt:0,dist:0,v:10,score:0,combo:0,rescued:0,pass:0,gap:10,grace:0,slow:0,shake:0,t:0,fx:[],obs:[],vic:[],wakes:[],splashes:[],lastDuckWake:0,lastTubeWake:0,
-    duck:{x:0,px:0,vx:0,lane:1,r:.35},tube:{x:0,px:0,z:2.6,pz:2.6,vx:0,vz:0,r:.6,T:0},jump:{y:0,py:0,vy:0,air:false}};
+    duck:{x:0,px:0,vx:0,lane:1,r:.35},tube:{x:0,px:0,z:2.6,pz:2.6,vx:0,vz:0,r:.6,T:0},jump:{y:0,py:0,vy:0,air:false},
+    phase:PHASES.NORMAL,phaseEndDist:0,specialCooldownUntil:35,lastSpecialPhase:null};
   input.queue.length=0;input.jumpAt=0;
 }
 function spawn(){
-  const s=S,z=-75,r=Math.random(),d=s.dist,l=Math.floor(Math.random()*3);
-  if(r<.24)s.vic.push({x:LANE[Math.random()<.5?0:2],z,ph:Math.random()*6,gender:Math.random()<.5?'girl':'boy'});
-  else if(r<.36){s.obs.push({x:0,z,hw:3.2,hd:.5,h:.7,type:'wide'});s.gap=8}
-  else if(r<.48&&d>150){
-    const dir=Math.random()<.5?-1:1;
-    s.obs.push({npc:1,type:'horse',x:-dir*4,z,hw:.9,hd:1,h:2,dir,st:'wait'});
+  const s = S, z = -75;
+
+  // 1. เฟสม้าศึกวิ่งเตลิด (Horse Stampede) - ความถี่สูงแต่คงความปลอดภัยขั้นต่ำ
+  if(s.phase === PHASES.HORSE_STAMPEDE){
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    s.obs.push({npc: 1, type: 'horse', x: -dir * 4, z, hw: 0.9, hd: 1, h: 2, dir, st: 'wait'});
     sfx.play('horse_run');
+    // Hard Minimum Cap: รับประกันเวลาตอบสนองการสลับเลน (t_dodge >= 0.47s) ไม่ให้ม้าซ้อนกัน
+    const minGap = Math.max(12.0, s.v * 0.78 + 2.0);
+    return minGap + Math.random() * 2.0;
   }
-  else if(r<.58&&d>300){
-    s.obs.push({npc:1,type:'speedboat',x:LANE[l],z:-95,hw:.8,hd:1.4,h:2.2,rz:8});
+
+  // 2. เฟสเรือด่วนคลั่ง (Speedboat Rush) - ความหนาแน่นสูงพร้อม Hard Safety Cap
+  if(s.phase === PHASES.SPEEDBOAT_RUSH){
+    // กฎเหล็ก: ล็อกเลนว่างอย่างน้อย 1 เลนเสมอ ป้องกันกำแพง 3 เลนตัน 100%
+    const freeLane = Math.floor(Math.random() * 3);
+    const rushLanes = [0, 1, 2].filter(l => l !== freeLane);
+    const count = Math.random() < 0.45 ? 2 : 1;
+    for(let i = 0; i < count; i++){
+      s.obs.push({npc: 1, type: 'speedboat', x: LANE[rushLanes[i]], z: -95, hw: 0.8, hd: 1.4, h: 2.2, rz: 8});
+    }
     sfx.play('speedboat_warn');
+    // Hard Minimum Cap: คำนวณตามความเร็วสัมพัทธ์ (s.v + 8) ให้ผู้เล่นมีเวลาหลบเข้าเลนว่างอย่างน้อย ~0.70 วินาทีเสมอ
+    const minGap = Math.max(16.0, (s.v + 8) * 0.62 + 2.5);
+    return minGap + Math.random() * 3.0;
   }
-  else if(r<.72)s.obs.push({npc:1,type:'rowboat',x:LANE[l],z,hw:.8,hd:1.2,h:.7,rz:-2,vx:(Math.random()<.5?-1:1)*.5});
-  else{
-    const ls=[0,1,2].sort(()=>Math.random()-.5),n=Math.random()<.4?2:1;
-    for(let i=0;i<n;i++)s.obs.push({x:LANE[ls[i]],z,hw:.8,hd:.6,h:.7,type:'log'})
+
+  // 3. เฟสกู้ภัยฉุกเฉิน (Rescue Mission) - ถี่ขึ้นแบบคอมโบกระหน่ำ
+  if(s.phase === PHASES.RESCUE_MISSION){
+    const l = Math.floor(Math.random() * 3);
+    s.vic.push({x: LANE[l], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy'});
+    // Hard Minimum Cap: เว้นระยะให้ห่วงยางฟิสิกส์คืนตัวและเหวี่ยงรับคนถัดไปได้ทัน
+    const minGap = Math.max(8.0, s.v * 0.52 + 1.5);
+    return minGap + Math.random() * 2.0;
   }
+
+  // 4. เฟสวิบากท่อนไม้ (Log Hurdles) - ความถี่สูงแบบ Rhythm Jump พร้อม Hard Minimum Cap ทางคณิตศาสตร์
+  if(s.phase === PHASES.LOG_HURDLES){
+    // ปรับ Hitbox ท่อนไม้: ลดความหนา Z-depth (hd = 0.32) และความสูงที่ต้องกระโดดพ้น (h = 0.5) ให้กระโดดข้ามง่ายขึ้น โดยคงความกว้างเต็มจอ (hw = 3.2)
+    s.obs.push({x: 0, z, hw: 3.2, hd: 0.32, h: 0.5, type: 'wide'});
+    // Hard Minimum Cap ทางคณิตศาสตร์ (Anti-Impossible Safety Cap):
+    // เวลาลอยตัว t_air = 2 * v0 / g = 2 * 9.5 / 26 ≈ 0.73 วินาที
+    // เวลาตอบสนองและเตรียมกระโดดรอบถัดไป t_prep >= 0.30 วินาที (รวม cycle time >= 1.03 วินาที)
+    // ระยะห่างต่ำสุด = s.v * 1.06 + 2.0 เมตร (ป้องกันการตกกระแทกท่อนไม้ถัดไป 100% ในทุกระดับความเร็ว)
+    const minGap = Math.max(16.5, s.v * 1.06 + 2.0);
+    return minGap + Math.random() * 2.5;
+  }
+
+  // 5. เฟสปกติ (Normal Phase) - การสุ่มแบบผสมตามระยะทางเดิมของเกม
+  const r = Math.random(), d = s.dist, l = Math.floor(Math.random() * 3);
+  if(r < 0.24){
+    s.vic.push({x: LANE[Math.random() < 0.5 ? 0 : 2], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy'});
+  } else if(r < 0.36){
+    s.obs.push({x: 0, z, hw: 3.2, hd: 0.32, h: 0.5, type: 'wide'});
+    return Math.max(18, s.v * 1.35) + Math.random() * 4;
+  } else if(r < 0.48 && d > 150){
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    s.obs.push({npc: 1, type: 'horse', x: -dir * 4, z, hw: 0.9, hd: 1, h: 2, dir, st: 'wait'});
+    sfx.play('horse_run');
+  } else if(r < 0.58 && d > 300){
+    s.obs.push({npc: 1, type: 'speedboat', x: LANE[l], z: -95, hw: 0.8, hd: 1.4, h: 2.2, rz: 8});
+    sfx.play('speedboat_warn');
+    return Math.max(20, (s.v + 8) * 0.9) + Math.random() * 4;
+  } else if(r < 0.72){
+    // ปรับ Hitbox เรือแจว (Rowboat): ปรับสัดส่วนให้แนบสนิทกับตัวโมเดลเรือจริง (hw: 0.78, hd: 0.48, h: 1.0)
+    s.obs.push({npc: 1, type: 'rowboat', x: LANE[l], z, hw: 0.78, hd: 0.48, h: 1.0, rz: -2, vx: (Math.random() < 0.5 ? -1 : 1) * 0.5});
+  } else {
+    const ls = [0, 1, 2].sort(() => Math.random() - 0.5), n = Math.random() < 0.4 ? 2 : 1;
+    for(let i = 0; i < n; i++) s.obs.push({x: LANE[ls[i]], z, hw: 0.8, hd: 0.32, h: 0.5, type: 'log'});
+  }
+  return Math.max(12, s.v * 0.85) + Math.random() * 4;
 }
 function npcStep(o,s,dt){
   if(o.type==='rowboat'){o.x+=o.vx*dt;if(Math.abs(o.x)>2.4){o.x=clamp(o.x,-2.4,2.4);o.vx=-o.vx}}
@@ -320,7 +458,8 @@ function step(dt){
   }
   s.splashes.length=spCount;
   ensureTuns(s);s.tun+=((inTun(s,s.dist)?1:0)-s.tun)*Math.min(1,dt*1.5);
-  s.gap-=dz;if(s.gap<=0){spawn();s.gap=Math.max(s.gap,0)+Math.max(13,s.v*.95)+Math.random()*5}
+  updatePhase(s);
+  s.gap-=dz;if(s.gap<=0){s.gap=Math.max(s.gap,0)+spawn()}
   const jy=s.jump.y;
   for(let i=s.obs.length-1;i>=0;i--){
     const o=s.obs[i];o.z+=dz+(o.rz||0)*wd;if(o.npc)npcStep(o,s,wd);
@@ -450,7 +589,7 @@ function quad(x1,x2,zn,zf,c){
 }
 function ell(x,y,rx,ry){ctx.beginPath();ctx.ellipse(x,y,Math.max(.1,rx),Math.max(.1,ry),0,0,7);ctx.fill()}
 function circ(x,y,r){ctx.beginPath();ctx.arc(x,y,Math.max(.1,r),0,7);ctx.fill()}
-function dbgCircle(x,z,r,col){const p=P(x,z),rx=r*p.s;ctx.strokeStyle=col;ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(p.x,p.y,rx,rx*Math.min(.8,CAM.y/p.d*.8),0,0,7);ctx.stroke()}
+function dbgCircle(x,z,r,col,yOff=0){const p=P(x,z),rx=r*p.s;ctx.strokeStyle=col;ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(p.x,p.y+yOff,rx,rx*Math.min(.8,CAM.y/p.d*.8),0,0,7);ctx.stroke()}
 function dbgBox(o,z){const a=P(o.x-o.hw,z+o.hd),b=P(o.x+o.hw,z+o.hd),c=P(o.x+o.hw,z-o.hd),d=P(o.x-o.hw,z-o.hd);ctx.strokeStyle='#ff3b3b';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.lineTo(d.x,d.y);ctx.closePath();ctx.stroke()}
 
 const INK='#141226',lw=u=>Math.max(2,u*.07);
@@ -461,10 +600,12 @@ function TRI(pts,f,l){ctx.beginPath();pts.forEach((q,i)=>i?ctx.lineTo(q[0],q[1])
 /* คลื่นน้ำและหยดน้ำกระจาย (Water Wakes & Splashes) */
 function drawWakes(zoff){
   if(!S.wakes)return;
+  const pOff = Math.round(H * 0.12);
   for(let i=0;i<S.wakes.length;i++){
     const w=S.wakes[i],z=w.z+zoff;
     if(z<-10||z>14)continue;
     const p=P(w.x,z,0);if(p.d<.7)continue;
+    if(w.type==='duck'||w.type==='tube'||w.type==='land') p.y += pOff;
     const al=Math.max(0,1-w.life/w.maxLife);
     const rx=w.r*p.s,ry=rx*Math.min(.36,CAM.y/p.d*.42);
     ctx.strokeStyle=`rgba(255,255,255,${.44*al})`;
@@ -481,10 +622,12 @@ function drawWakes(zoff){
 }
 function drawSplashes(zoff){
   if(!S.splashes)return;
+  const pOff = Math.round(H * 0.12);
   for(let i=0;i<S.splashes.length;i++){
     const sp=S.splashes[i],z=sp.z+zoff;
     if(z<-10||z>14||sp.y<=0)continue;
     const p=P(sp.x,z,sp.y);if(p.d<.7)continue;
+    if(z>=-0.5) p.y += pOff;
     const al=Math.max(0,1-sp.life/sp.maxLife);
     const r=Math.max(1.3,sp.r*p.s);
     ctx.fillStyle=`rgba(240,252,255,${.9*al})`;
@@ -2182,18 +2325,24 @@ function render(al,fd){
   drawWakes(zoff);
   const pl=.5+.5*Math.sin(s.t*10);
   s.obs.forEach(o=>{if(o.type==='speedboat'&&o.z+zoff<-2){const zb=o.z+zoff-1.4;hq(o.x-.85,o.x+.85,3,zb,0,`rgba(255,45,85,${.14+.16*pl})`);poly(P(o.x-.5,zb,0),P(o.x+.5,zb,0),P(o.x+2,zb-5,0),P(o.x-2,zb-5,0),'rgba(255,255,255,.5)')}});
+  const pyOff = Math.round(H * 0.12);
   const d=s.duck,t=s.tube,dx=lerp(d.px,d.x,run?al:1),tx=lerp(t.px,t.x,run?al:1),tz=lerp(t.pz,t.z,run?al:1);
   D_QUEUE.length=0;
   for(let i=0;i<s.obs.length;i++){const o=s.obs[i];D_QUEUE.push({z:o.z+zoff,f:()=>drawObs(o,o.z+zoff)})}
   for(let i=0;i<s.vic.length;i++){const v=s.vic[i];D_QUEUE.push({z:v.z+zoff,f:()=>drawVic(v,v.z+zoff,s.t)})}
   const jy=lerp(s.jump.py,s.jump.y,run?al:1);
-  D_QUEUE.push({z:0,f:()=>drawDuck(P(dx,0),clamp(d.vx*.03,-.25,.25),jy)});
-  D_QUEUE.push({z:tz,f:()=>{const pd=P(dx,0),pt=P(tx,tz);drawRope({x:pd.x,y:pd.y-jy*pd.s,s:pd.s},{x:pt.x,y:pt.y-jy*pt.s,s:pt.s},t.T);drawTube(pt,clamp(t.vx*.04,-.3,.3),s.pass,jy)}});
+  D_QUEUE.push({z:0,f:()=>{const pd=P(dx,0);pd.y+=pyOff;drawDuck(pd,clamp(d.vx*.03,-.25,.25),jy)}});
+  D_QUEUE.push({z:tz,f:()=>{
+    const pd=P(dx,0);pd.y+=pyOff;
+    const pt=P(tx,tz);pt.y+=pyOff;
+    drawRope({x:pd.x,y:pd.y-jy*pd.s,s:pd.s},{x:pt.x,y:pt.y-jy*pt.s,s:pt.s},t.T);
+    drawTube(pt,clamp(t.vx*.04,-.3,.3),s.pass,jy);
+  }});
 
   D_QUEUE.sort((a,b)=>a.z-b.z);
   for(let i=0;i<D_QUEUE.length;i++)D_QUEUE[i].f();
   drawSplashes(zoff);
-  if(dbg){dbgCircle(dx,0,d.r,'#3bd4ff');dbgCircle(tx,tz,t.r,'#ffe23b')}
+  if(dbg){dbgCircle(dx,0,d.r,'#3bd4ff',pyOff);dbgCircle(tx,tz,t.r,'#ffe23b',pyOff)}
   if(s.slow>0){ctx.fillStyle='rgba(255,255,255,.14)';ctx.fillRect(-20,-20,W+40,H+40)}
   ctx.restore();
   for(let i=s.fx.length-1;i>=0;i--){
@@ -2201,7 +2350,9 @@ function render(al,fd){
     const y=f.y-f.t*50;ctx.globalAlpha=1-f.t/1.1;ctx.font='700 24px Mali,sans-serif';ctx.textAlign='center';ctx.lineWidth=6;ctx.strokeStyle=INK;ctx.strokeText(f.txt,f.x,y);ctx.fillStyle=f.col;ctx.fillText(f.txt,f.x,y);ctx.globalAlpha=1;
   }
   const bl=s.state==='PAUSED'?'เล่นต่อ':(s.state==='COUNTDOWN'?'เตรียมพร้อม...':'หยุด');if($('#bp').textContent!==bl)$('#bp').textContent=bl;$('#bp').disabled=!(s.state==='RUN'||s.state==='PAUSED'||s.state==='COUNTDOWN');
-  const zz=zoneAt(s.dist),zt='โซน '+(zz+1)+': '+ZN[zz]+' · '+cur.nm;if($('#hz').textContent!==zt)$('#hz').textContent=zt;
+  const zz=zoneAt(s.dist);let zt='โซน '+(zz+1)+': '+ZN[zz]+' · '+cur.nm;
+  if(s.phase&&s.phase!==PHASES.NORMAL&&PHASE_INFO[s.phase]){zt+=' · ⚡ '+PHASE_INFO[s.phase].name}
+  if($('#hz').textContent!==zt)$('#hz').textContent=zt;
   $('#hs').textContent=Math.floor(s.score);$('#hd').textContent=Math.floor(s.dist)+' ม. · '+s.v.toFixed(0)+' ม./วิ';
   $('#hc').textContent=s.combo>1?'คอมโบ x'+s.combo:'';$('#hr').textContent='ช่วยแล้ว '+s.rescued+' คน';
 }
