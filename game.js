@@ -17,10 +17,24 @@ const DUCK={omega:16,zeta:.5};
 const JUMP={v0:9.5,g:26};
 const RESCUE={radius:.5};
 const LANE=[-2,0,2],CAM={z:8,y:3.4},BANK=4.4;
-let S,camX=0,dbg=false,best=0;
+let S,camX=0,dbg=false,testMode=false,best=0;
 
 try{best=+localStorage.getItem('duckBest')||0}catch(e){}
 $('#bd').onclick=()=>{dbg=!dbg;$('#bd').textContent='Hitbox: '+(dbg?'เปิด':'ปิด')};
+function setTestMode(val){
+  testMode=!!val;
+  if($('#bt')){
+    $('#bt').textContent='โหมดทดสอบ: '+(testMode?'เปิด':'ปิด');
+    $('#bt').classList.toggle('active',testMode);
+  }
+  if($('#mt')){
+    $('#mt').textContent='🛡️ โหมดทดสอบ: '+(testMode?'เปิด 🟢':'ปิด ⚪');
+    $('#mt').classList.toggle('active-mode',testMode);
+  }
+  if($('#ht-badge'))$('#ht-badge').hidden=!testMode;
+}
+if($('#bt'))$('#bt').onclick=()=>setTestMode(!testMode);
+if($('#mt'))$('#mt').onclick=()=>setTestMode(!testMode);
 
 /* ---------- Sound Effects (SFX) System ---------- */
 const AUDIO_PATHS={
@@ -29,7 +43,11 @@ const AUDIO_PATHS={
   jump:'assets/sfx_jump.mp3',
   splash:'assets/sfx_splash.mp3',
   rescue:'assets/sfx_rescue.mp3',
-  hit:'assets/sfx_hit.mp3'
+  hit:'assets/sfx_hit.mp3',
+  countdown:'assets/sfx_countdown.mp3',
+  go:'assets/sfx_go.mp3',
+  speedboat_warn:'assets/sfx_speedboat_warn.mp3',
+  horse_run:'assets/sfx_horse_run.mp3'
 };
 
 class SoundManager{
@@ -90,6 +108,24 @@ class SoundManager{
       osc.type='sawtooth';osc.frequency.setValueAtTime(140,now);osc.frequency.exponentialRampToValueAtTime(40,now+.25);
       gain.gain.setValueAtTime(.3,now);gain.gain.exponentialRampToValueAtTime(.001,now+.25);
       osc.start(now);osc.stop(now+.25);
+    }else if(t==='countdown'){
+      osc.type='sine';osc.frequency.setValueAtTime(659.25,now);
+      gain.gain.setValueAtTime(.22,now);gain.gain.exponentialRampToValueAtTime(.001,now+.14);
+      osc.start(now);osc.stop(now+.14);
+    }else if(t==='go'){
+      osc.type='triangle';osc.frequency.setValueAtTime(880,now);
+      osc.frequency.exponentialRampToValueAtTime(1174.66,now+.1);
+      gain.gain.setValueAtTime(.26,now);gain.gain.exponentialRampToValueAtTime(.001,now+.32);
+      osc.start(now);osc.stop(now+.32);
+    }else if(t==='speedboat_warn'){
+      osc.type='sawtooth';osc.frequency.setValueAtTime(320,now);osc.frequency.setValueAtTime(460,now+.12);
+      gain.gain.setValueAtTime(.24,now);gain.gain.exponentialRampToValueAtTime(.001,now+.38);
+      osc.start(now);osc.stop(now+.38);
+    }else if(t==='horse_run'){
+      osc.type='triangle';osc.frequency.setValueAtTime(190,now);
+      osc.frequency.exponentialRampToValueAtTime(75,now+.08);
+      gain.gain.setValueAtTime(.25,now);gain.gain.exponentialRampToValueAtTime(.001,now+.12);
+      osc.start(now);osc.stop(now+.12);
     }
   }
 }
@@ -106,7 +142,7 @@ class Input{
       if(e.code==='ArrowLeft'||e.code==='KeyA')this.push(-1);
       if(e.code==='ArrowRight'||e.code==='KeyD')this.push(1);
       if(e.code==='ArrowUp'||e.code==='KeyW'||e.code==='Space')this.jump();
-      if(e.code==='KeyP'||e.code==='Escape')pause();
+      if(e.code==='KeyP'||e.code==='Escape'){if(S.state==='RUN'||S.state==='COUNTDOWN')pause();else if(S.state==='PAUSED')resume()}
     });
     el.addEventListener('pointerdown',e=>{this.ts={x:e.clientX,y:e.clientY,t:e.timeStamp,m:false}});
     el.addEventListener('pointermove',e=>{
@@ -193,8 +229,15 @@ function spawn(){
   const s=S,z=-75,r=Math.random(),d=s.dist,l=Math.floor(Math.random()*3);
   if(r<.24)s.vic.push({x:LANE[Math.random()<.5?0:2],z,ph:Math.random()*6});
   else if(r<.36){s.obs.push({x:0,z,hw:3.2,hd:.5,h:.7,type:'wide'});s.gap=8}
-  else if(r<.48&&d>150){const dir=Math.random()<.5?-1:1;s.obs.push({npc:1,type:'horse',x:-dir*4,z,hw:.9,hd:1,h:2,dir,st:'wait'})}
-  else if(r<.58&&d>300)s.obs.push({npc:1,type:'speedboat',x:LANE[l],z:-95,hw:.8,hd:1.4,h:2.2,rz:8});
+  else if(r<.48&&d>150){
+    const dir=Math.random()<.5?-1:1;
+    s.obs.push({npc:1,type:'horse',x:-dir*4,z,hw:.9,hd:1,h:2,dir,st:'wait'});
+    sfx.play('horse_run');
+  }
+  else if(r<.58&&d>300){
+    s.obs.push({npc:1,type:'speedboat',x:LANE[l],z:-95,hw:.8,hd:1.4,h:2.2,rz:8});
+    sfx.play('speedboat_warn');
+  }
   else if(r<.72)s.obs.push({npc:1,type:'rowboat',x:LANE[l],z,hw:.8,hd:1.2,h:.7,rz:-2,vx:(Math.random()<.5?-1:1)*.5});
   else{
     const ls=[0,1,2].sort(()=>Math.random()-.5),n=Math.random()<.4?2:1;
@@ -204,11 +247,23 @@ function spawn(){
 function npcStep(o,s,dt){
   if(o.type==='rowboat'){o.x+=o.vx*dt;if(Math.abs(o.x)>2.4){o.x=clamp(o.x,-2.4,2.4);o.vx=-o.vx}}
   else if(o.type==='horse'){
-    if(o.st==='wait'&&o.z>=-s.v*1.8)o.st='go';
-    if(o.st==='go'){o.x+=o.dir*3.2*dt;if(o.dir*o.x>=4){o.x=o.dir*4;o.st='done'}}
+    if(o.st==='wait'&&o.z>=-s.v*1.8){
+      o.st='go';
+      sfx.play('horse_run');
+    }
+    if(o.st==='go'){
+      o.x+=o.dir*3.4*dt;
+      // ละอองน้ำกระจายรอบขาม้าขณะวิ่งย่ำน้ำ (Dynamic Water Splashes at horse feet)
+      if(Math.random()<0.35)spawnSplash(o.x,0,o.z,2,0.9,-o.dir*1.2);
+      if(Math.random()<0.25)s.wakes.push({x:o.x,z:o.z,r:.25,maxR:1.3,life:0,maxLife:.55,type:'droplet'});
+      if(o.dir*o.x>=4){o.x=o.dir*4;o.st='done'}
+    }
   }else if(o.type==='speedboat'){
     const t=s.tube,dx=t.x-o.x;
-    if(Math.abs(o.z-t.z)<2&&Math.abs(dx)<2.4&&Math.abs(dx)>.1)t.vx+=Math.sign(dx)*6*dt; // คลื่นดันห่วงยางเบา ๆ
+    if(Math.abs(o.z-t.z)<2&&Math.abs(dx)<2.4&&Math.abs(dx)>.1)t.vx+=Math.sign(dx)*6*dt;
+    // คลื่นและละอองน้ำท้ายเรือสปีดโบ๊ตฟุ้งกระจาย (Prominent trailing wake & spray particles)
+    if(Math.random()<0.45)spawnSplash(o.x+(Math.random()-.5)*.5,0,o.z-1.2,3,1.4,(Math.random()-.5)*3);
+    if(Math.random()<0.3)s.wakes.push({x:o.x+(Math.random()-.5)*.3,z:o.z-1,r:.4,maxR:2.4,life:0,maxLife:.7,type:'tube',vx:(Math.random()-.5)*2});
   }
 }
 function fx(txt,col){const p=P(S.tube.x,S.tube.z);S.fx.push({txt,x:p.x,y:p.y-p.s*1.2,t:0,col})}
@@ -260,8 +315,10 @@ function step(dt){
     const o=s.obs[i];o.z+=dz+(o.rz||0)*wd;if(o.npc)npcStep(o,s,wd);
     if(o.z>14){s.obs.splice(i,1);continue}
     if(o.z<-4||o.z>s.tube.z+4||jy>=o.h)continue; // กระโดดสูงกว่าสิ่งกีดขวาง = ปลอดภัยทั้งเป็ดและห่วงยาง
-    if(circleAABB(s.duck.x,0,s.duck.r,o))return die('เป็ดชนสิ่งกีดขวาง');
-    if(s.grace<=0&&circleAABB(s.tube.x,s.tube.z,s.tube.r,o))return die('คนบนห่วงยางชนเข้าแล้ว');
+    if(!testMode){
+      if(circleAABB(s.duck.x,0,s.duck.r,o))return die('เป็ดชนสิ่งกีดขวาง');
+      if(s.grace<=0&&circleAABB(s.tube.x,s.tube.z,s.tube.r,o))return die('คนบนห่วงยางชนเข้าแล้ว');
+    }
   }
   for(let i=s.vic.length-1;i>=0;i--){
     const v=s.vic[i];v.z+=dz;
@@ -273,6 +330,7 @@ function step(dt){
   }
 }
 function die(why){
+  if(testMode)return;
   sfx.play('hit');
   S.state='OVER';S.shake=.4;
   if(S.score>best){best=S.score;try{localStorage.setItem('duckBest',Math.floor(best))}catch(e){}}
@@ -282,20 +340,84 @@ function savePrev(){const s=S;s.jump.py=s.jump.y;s.duck.px=s.duck.x;s.tube.px=s.
 
 /* ---------- Overlay / สถานะ ---------- */
 const mm=$('#mm'),hw=$('#hw');let snd=true;
+let countdownTimer=null;
+const cdEl=$('#cd'),cdnEl=$('#cdn');
+function cancelCountdown(){
+  if(countdownTimer){clearTimeout(countdownTimer);countdownTimer=null}
+  if(cdEl)cdEl.hidden=true;
+}
+function showCountdownStep(val,text,isGo){
+  if(!cdEl||!cdnEl)return;
+  cdEl.hidden=false;
+  cdnEl.textContent=text||val;
+  if(isGo)cdnEl.classList.add('go');
+  else cdnEl.classList.remove('go');
+  cdnEl.style.animation='none';
+  void cdnEl.offsetWidth;
+  cdnEl.style.animation='';
+}
 function overlay(kind,why){
+  cancelCountdown();
   $('#ov').hidden=false;$('#ot').textContent='จบเกม';
   $('#op').textContent=why+' — ได้ '+Math.floor(S.score)+' คะแนน วิ่งไป '+Math.floor(S.dist)+' ม. ช่วยคนได้ '+S.rescued+' คน (สูงสุด '+Math.floor(best)+')';
   $('#oh').textContent='ขอนไม้ต้องกระโดดข้าม ส่วนม้าและเรือต้องหลบเลน';
 }
-function showMenu(){mm.hidden=false;hw.hidden=true;$('#ov').hidden=true;$('#mr').disabled=S.state!=='PAUSED'}
-function pause(){if(S.state==='RUN'){S.state='PAUSED';showMenu()}}
-function startNew(){newGame();S.state='RUN';mm.hidden=true;$('#ov').hidden=true;acc=0;last=performance.now()/1000}
-function resume(){if(S.state==='PAUSED'){S.state='RUN';mm.hidden=true;acc=0;last=performance.now()/1000}}
+function showMenu(){
+  cancelCountdown();
+  mm.hidden=false;hw.hidden=true;$('#ov').hidden=true;
+  $('#mr').disabled=S.state!=='PAUSED';
+}
+function pause(){
+  if(S.state==='RUN'||S.state==='COUNTDOWN'){
+    cancelCountdown();
+    S.state='PAUSED';
+    showMenu();
+  }
+}
+function startNew(){
+  cancelCountdown();
+  newGame();
+  S.state='RUN';
+  mm.hidden=true;
+  $('#ov').hidden=true;
+  acc=0;
+  last=performance.now()/1000;
+}
+function resume(){
+  if(S.state!=='PAUSED')return;
+  cancelCountdown();
+  S.state='COUNTDOWN';
+  mm.hidden=true;
+  $('#ov').hidden=true;
+  let step=3;
+  showCountdownStep(3,'3',false);
+  sfx.play('countdown');
+  const tick=()=>{
+    if(S.state!=='COUNTDOWN')return;
+    step--;
+    if(step>0){
+      showCountdownStep(step,''+step,false);
+      sfx.play('countdown');
+      countdownTimer=setTimeout(tick,1000);
+    }else{
+      showCountdownStep(0,'ลุย!',true);
+      sfx.play('go');
+      countdownTimer=setTimeout(()=>{
+        if(S.state!=='COUNTDOWN')return;
+        cancelCountdown();
+        acc=0;
+        last=performance.now()/1000;
+        S.state='RUN';
+      },400);
+    }
+  };
+  countdownTimer=setTimeout(tick,1000);
+}
 $('#go').onclick=$('#ms').onclick=$('#br').onclick=startNew;$('#mr').onclick=resume;
-$('#gm').onclick=()=>{newGame();showMenu()};
+$('#gm').onclick=()=>{cancelCountdown();newGame();showMenu()};
 $('#mh').onclick=()=>hw.hidden=false;$('#hx').onclick=()=>hw.hidden=true;
 $('#mso').onclick=()=>{snd=!snd;sfx.enabled=snd;$('#mso').textContent='เสียง: '+(snd?'เปิด 🔊':'ปิด 🔇')};
-$('#bp').onclick=()=>{if(S.state==='RUN')pause();else if(S.state==='PAUSED')resume()};
+$('#bp').onclick=()=>{if(S.state==='RUN'||S.state==='COUNTDOWN')pause();else if(S.state==='PAUSED')resume()};
 document.addEventListener('click',e=>{const b=e.target.closest('button');if(b){sfx.play('click');b.blur()}});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();last=performance.now()/1000});
 
@@ -521,29 +643,276 @@ function drawObs(o,z){
     // งอบใบลานสาน (Woven Straw Hat)
     TRI([[-.38*u,-.94*u],[.38*u,-.94*u],[0,-1.24*u]],'#ffd166',l*.9);
   }else if(o.type==='horse'){
-    // ม้าลุยน้ำสไตล์จิบิ พร้อมคลื่นแตกที่ขาม้า
-    const d=o.dir,gl=o.st==='go',g=Math.sin(T*(gl?16:6)),fr=g>0,sw=g*.18*u;ctx.translate(0,-Math.abs(g)*(gl?.1:.03)*u);
-    // คลื่นย่ำน้ำ
-    ctx.fillStyle='rgba(255,255,255,.5)';ell(0,-.02*u,.85*u,.22*u);
-    TRI([[-d*.6*u,-.9*u],[-d*.95*u+sw,-.5*u],[-d*.6*u,-.55*u]],'#3a2210',l*.8);
-    [-.5,-.25,.25,.5].forEach((x,i)=>RR(x*u-.05*u,-.5*u,.1*u,(.45-((i&1)===(fr?1:0)?.15:0))*u,.03*u,'#f0b878',l*.7));
-    E(0,-.75*u,.72*u,.34*u,'#f0b878',l);RR(d*.5*u-.14*u,-1.3*u,.28*u,.6*u,.1*u,'#f0b878',l);E(d*.75*u,-1.3*u,.24*u,.15*u,'#f0b878',l);
-    E(0,-.05*u,.9*u,.12*u,'rgba(255,255,255,.9)',l*.6);
-    ctx.translate(0,g*.05*u);RR(-.15*u,-1.5*u,.3*u,.55*u,.08*u,'#ff5fa2',l);E(0,-1.68*u,.13*u,.13*u,'#ffcf9e',l*.8);
+    // คนขี่ม้าและม้าวิ่งลุยน้ำ (Horse & Rider ตามรูปต้นแบบ Reference Image เป๊ะ)
+    const d=o.dir||1,gl=o.st==='go';
+    const phase=S.t*(gl?15:5);
+    const bobY=Math.abs(Math.sin(phase))*(gl?.12:.03)*u;
+    const pitch=Math.sin(phase)*(gl?.06:.02);
+
+    ctx.save();
+    ctx.scale(d,1); // หันหน้าตามทิศทางการวิ่ง
+    ctx.translate(0,-bobY);
+    ctx.rotate(pitch);
+
+    // 1. คลื่นและระลอกฟองน้ำรอบขาม้า (Water ripples around hooves)
+    ctx.fillStyle='rgba(255,255,255,.55)';
+    ell(0,-.02*u,.95*u,.24*u);
+
+    // ฟังก์ชันวาดขาม้า 4 ขา พร้อมข้อเท้าขาวและกีบดำ (Articulated Legs with White Socks & Black Hooves)
+    const rLeg1=Math.sin(phase);
+    const rLeg2=Math.sin(phase+1.2);
+    const fLeg1=Math.sin(phase+2.0);
+    const fLeg2=Math.sin(phase+3.2);
+
+    const drawLeg=(ox,legSwing,isFar)=>{
+      const col=isFar?'#844420':'#a3562a';
+      const sockCol=isFar?'#e2ded6':'#fcfaf4';
+      const hoofCol=isFar?'#181a20':'#222630';
+      const kneeX=ox+legSwing*.16*u;
+      const footX=kneeX+legSwing*.1*u;
+      // ท่อนขาบน
+      ctx.strokeStyle=col;ctx.lineWidth=.15*u;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(ox,-.55*u);ctx.lineTo(kneeX,-.28*u);ctx.stroke();
+      // ข้อเท้าสีขาว (White sock)
+      ctx.strokeStyle=sockCol;ctx.lineWidth=.13*u;
+      ctx.beginPath();ctx.moveTo(kneeX,-.28*u);ctx.lineTo(footX,-.08*u);ctx.stroke();
+      // กีบเท้าม้าสีดำโค้งมน (Black rounded hoof)
+      RR(footX-.08*u,-.08*u,.16*u,.09*u,.03*u,hoofCol,0);
+    };
+
+    // วาดขาไกล 2 ข้างก่อน (Far rear and front legs)
+    drawLeg(-.42*u,rLeg2,true);
+    drawLeg(.38*u,fLeg2,true);
+
+    // 2. พวงหางม้าสีดำหนาพลิ้วไหวตามแรงวิ่ง (Flowing Dark Tail)
+    const tailSwing=Math.sin(phase-.5)*.2;
+    ctx.save();
+    ctx.translate(-.6*u,-.65*u);
+    ctx.rotate(-.3+tailSwing);
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.bezierCurveTo(-.25*u,.2*u,-.4*u,.6*u,-.15*u,.85*u);
+    ctx.bezierCurveTo(-.05*u,.7*u,.05*u,.5*u,.1*u,.2*u);
+    ctx.closePath();
+    ctx.fillStyle='#241e1c';ctx.fill();
+    ctx.lineWidth=l*.8;ctx.strokeStyle=INK;ctx.stroke();
+    ctx.restore();
+
+    // 3. ลำตัวม้าสีน้ำตาลเกาลัด (Warm Chestnut Body)
+    ctx.beginPath();
+    ctx.ellipse(-.05*u,-.68*u,.58*u,.38*u,-.04,0,Math.PI*2);
+    ctx.fillStyle='#a3562a';ctx.fill();
+    ctx.lineWidth=l*1.1;ctx.strokeStyle=INK;ctx.stroke();
+
+    // วาดขาใกล้ 2 ข้างด้านหน้าลำตัว (Near rear and front legs)
+    drawLeg(-.35*u,rLeg1,false);
+    drawLeg(.44*u,fLeg1,false);
+
+    // 4. ผ้าปูอานม้าสีขาวและอานม้าหนังสีน้ำตาลเข้ม (Saddle Pad & Saddle)
+    RR(-.26*u,-.84*u,.44*u,.36*u,.08*u,'#fbf8f2',l*.8);
+    RR(-.22*u,-.88*u,.36*u,.22*u,.06*u,'#4a2f1c',l*.8);
+    ctx.fillStyle='#2c1e14';ctx.fillRect(-.08*u,-.48*u,.06*u,.2*u); // สายรัดทึบ
+
+    // 5. คอม้าและแผงคอสีดำหยักลอน (Neck & Mane)
+    ctx.beginPath();
+    ctx.moveTo(.2*u,-.82*u);
+    ctx.lineTo(.52*u,-1.36*u);
+    ctx.lineTo(.72*u,-1.22*u);
+    ctx.lineTo(.46*u,-.65*u);
+    ctx.closePath();
+    ctx.fillStyle='#a3562a';ctx.fill();
+    ctx.lineWidth=l;ctx.strokeStyle=INK;ctx.stroke();
+
+    // แผงคอม้าสีดำเป็นลอน (Scalloped Dark Mane)
+    for(let m=0;m<4;m++){
+      const mx=.22*u+m*.09*u,my=-.92*u-m*.13*u;
+      circ(mx,my,.11*u);
+    }
+    ctx.fillStyle='#26201e';ctx.fill();
+
+    // 6. หัวม้า จมูกขาว และตากลมโต (Horse Head, White Muzzle & Eye)
+    ctx.beginPath();
+    ctx.ellipse(.66*u,-1.28*u,.26*u,.18*u,.5,0,Math.PI*2);
+    ctx.fillStyle='#a3562a';ctx.fill();
+    ctx.lineWidth=l;ctx.strokeStyle=INK;ctx.stroke();
+
+    // ปลายจมูกสีครีมขาวมน (White Muzzle)
+    ctx.beginPath();
+    ctx.ellipse(.82*u,-1.18*u,.12*u,.11*u,.4,0,Math.PI*2);
+    ctx.fillStyle='#f6eee8';ctx.fill();
+    ctx.lineWidth=l*.8;ctx.strokeStyle=INK;ctx.stroke();
+    ctx.fillStyle='#222';circ(.86*u,-1.19*u,.026*u); // รูจมูก
+
+    // หูม้าตั้งชัน (Alert Ear)
+    TRI([[.54*u,-1.4*u],[.66*u,-1.62*u],[.68*u,-1.38*u]],'#a3562a',l*.8);
+    TRI([[.58*u,-1.42*u],[.65*u,-1.56*u],[.66*u,-1.41*u]],'#6c3616',0);
+
+    // ตากลมโตน่ารัก
+    ctx.fillStyle='#1c1c22';circ(.64*u,-1.34*u,.045*u);
+    ctx.fillStyle='#ffffff';circ(.65*u,-1.355*u,.016*u);
+
+    // สายบังเหียน (Bridle, Bit & Reins)
+    ctx.strokeStyle='#2b201a';ctx.lineWidth=l*.9;
+    ctx.beginPath();ctx.moveTo(.56*u,-1.42*u);ctx.lineTo(.74*u,-1.22*u);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(.7*u,-1.12*u);ctx.lineTo(.78*u,-1.26*u);ctx.stroke();
+    circ(.74*u,-1.22*u,.035*u); // ห่วงเหล็กบังเหียน
+    ctx.beginPath();
+    ctx.moveTo(.74*u,-1.22*u);
+    ctx.quadraticCurveTo(.42*u,-1.12*u,.14*u,-1.04*u);
+    ctx.stroke();
+
+    // 7. คนขี่ม้าสไตล์จิบิ (Chibi Rider: White Shirt, Dark Pants & Black Helmet)
+    // ขาคนขี่และรองเท้าบู้ตยาวในโกลน
+    ctx.strokeStyle='#222632';ctx.lineWidth=.15*u;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(-.06*u,-.92*u);ctx.lineTo(.04*u,-.68*u);ctx.lineTo(.02*u,-.48*u);ctx.stroke();
+    ctx.strokeStyle='#64748b';ctx.lineWidth=l*.8;
+    ctx.strokeRect(-.04*u,-.47*u,.12*u,.08*u); // โกลนเหล็ก
+
+    // เสื้อเชิ้ตขี่ม้าสีขาว (White Riding Shirt)
+    RR(-.16*u,-1.26*u,.32*u,.36*u,.08*u,'#ffffff',l);
+    ctx.strokeStyle='#ffffff';ctx.lineWidth=.11*u;
+    ctx.beginPath();ctx.moveTo(-.02*u,-1.2*u);ctx.lineTo(.12*u,-1.05*u);ctx.stroke();
+    ctx.fillStyle='#ffb48e';circ(.14*u,-1.04*u,.045*u); // มือจับสายบังเหียน
+
+    // ใบหน้าคนขี่ม้าสไตล์จิบิ (Peach skin head)
+    E(.02*u,-1.4*u,.16*u,.15*u,'#ffb48e',l*.7);
+
+    // หมวกขี่ม้าสีดำพร้อมปีกหมวกหน้า (Black Riding Helmet & Visor)
+    ctx.beginPath();
+    ctx.ellipse(0,-1.54*u,.22*u,.2*u,-.1,Math.PI*.8,Math.PI*2.2);
+    ctx.lineTo(.24*u,-1.46*u); // ปีกหมวกยื่นไปด้านหน้า
+    ctx.lineTo(.12*u,-1.43*u);
+    ctx.closePath();
+    ctx.fillStyle='#1c202a';ctx.fill();
+    ctx.lineWidth=l*1.1;ctx.strokeStyle=INK;ctx.stroke();
+
+    ctx.restore();
+
+    // เครื่องหมายตกใจเตือนเมื่อกำลังรอข้ามถนน
     if(o.st==='wait'){
-      const yy=-2.2*u-Math.abs(Math.sin(T*8))*.15*u;
-      TRI([[-.3*u,yy-.5*u],[.3*u,yy-.5*u],[0,yy]],'#ff2d55',l);TRI([[d*.5*u,yy-.7*u],[d*1.05*u,yy-.45*u],[d*.5*u,yy-.2*u]],'#ff2d55',l);
-      ctx.fillStyle='#fff';ctx.font=`700 ${.4*u}px Mali,sans-serif`;ctx.textAlign='center';ctx.fillText('!',0,yy-.6*u);
+      const yy=-2.3*u-Math.abs(Math.sin(T*8))*.15*u;
+      TRI([[-.26*u,yy-.45*u],[.26*u,yy-.45*u],[0,yy]],'#ff2d55',l);
+      TRI([[d*.4*u,yy-.65*u],[d*.9*u,yy-.42*u],[d*.4*u,yy-.2*u]],'#ff2d55',l);
+      ctx.fillStyle='#fff';ctx.font=`700 ${.38*u}px Mali,sans-serif`;ctx.textAlign='center';ctx.fillText('!',0,yy-.55*u);
     }
   }else if(o.type==='speedboat'){
-    // เรือสปีดโบ๊ทซิ่ง คลื่นท้ายกระจาย
-    ctx.translate(0,-Math.abs(Math.sin(T*9))*.07*u);ctx.rotate(Math.sin(T*9)*.04);
-    // คลื่นท้ายฟองขาวฟู่
-    E(0,-.05*u,1.05*u,.18*u,'rgba(255,255,255,.94)',l*.6);
-    for(let i=0;i<4;i++){const f=(T*2.5+i/4)%1;ctx.fillStyle=`rgba(255,255,255,${.85*(1-f)})`;circ((i-1.5)*.5*u,-.1*u-f*.6*u,(.12+.12*f)*u)}
-    RR(-.8*u,-.6*u,1.6*u,.55*u,.22*u,'#ff2020',l);ctx.fillStyle='#fff';ctx.fillRect(-.78*u,-.36*u,1.56*u,.1*u);
-    TRI([[-.4*u,-.6*u],[.4*u,-.6*u],[.26*u,-1.05*u],[-.26*u,-1.05*u]],'#d6f7ff',l);
-    E(0,-1.18*u,.1*u,.1*u,Math.sin(T*14)>0?'#ffff00':'#ff2020',l*.7);
+    // เรือสปีดโบ๊ท (Speedboat ตามรูปต้นแบบ Reference Image เป๊ะ)
+    ctx.translate(0,-Math.abs(Math.sin(T*12))*.06*u);
+    ctx.rotate(Math.sin(T*10)*.03);
+    
+    // 1. คลื่นโฟมขาวแหวกน้ำกระจายท้ายเรือและข้างลำเรือ (Prominent Water Wake & Foamy Spray)
+    const wakeW=1.35*u+Math.sin(T*15)*.1*u;
+    ctx.fillStyle='rgba(255,255,255,.55)';
+    ell(0,.05*u,wakeW,.26*u);
+    for(let side of[-1,1]){
+      ctx.fillStyle='rgba(220,245,255,.7)';
+      ell(side*.85*u,-.2*u,.4*u,.16*u);
+    }
+
+    // 2. ท้องเรือด้านล่างสีดำ/น้ำเงินเข้ม (Deep V-Keel & Underside)
+    ctx.beginPath();
+    ctx.moveTo(0,.08*u);
+    ctx.lineTo(-.78*u,-.36*u);
+    ctx.lineTo(.78*u,-.36*u);
+    ctx.closePath();
+    ctx.fillStyle='#181c2b';ctx.fill();
+    ctx.lineWidth=l*1.2;ctx.strokeStyle=INK;ctx.stroke();
+
+    // สันกระดูกงูตรงกลางท้องเรือ
+    ctx.beginPath();
+    ctx.moveTo(0,.08*u);
+    ctx.lineTo(0,-.55*u);
+    ctx.lineWidth=l*1.4;ctx.strokeStyle='#141226';ctx.stroke();
+
+    // 3. ตัวลำเรือสีขาวทรง V-Hull ปีกกว้าง (White Aerodynamic Hull)
+    ctx.beginPath();
+    ctx.moveTo(0,-.02*u);
+    ctx.bezierCurveTo(-.4*u,-.15*u,-.85*u,-.4*u,-.92*u,-.56*u);
+    ctx.bezierCurveTo(-.88*u,-.76*u,-.4*u,-.88*u,0,-.88*u);
+    ctx.bezierCurveTo(.4*u,-.88*u,.88*u,-.76*u,.92*u,-.56*u);
+    ctx.bezierCurveTo(.85*u,-.4*u,.4*u,-.15*u,0,-.02*u);
+    ctx.closePath();
+    ctx.fillStyle='#ffffff';ctx.fill();
+    ctx.lineWidth=l*1.3;ctx.strokeStyle=INK;ctx.stroke();
+
+    // 4. แถบสีฟ้าสดคาดขอบกราบเรือ (Bright Cyan-Blue Racing Stripe)
+    ctx.beginPath();
+    ctx.moveTo(0,-.18*u);
+    ctx.bezierCurveTo(-.4*u,-.26*u,-.85*u,-.44*u,-.9*u,-.58*u);
+    ctx.lineTo(-.86*u,-.68*u);
+    ctx.bezierCurveTo(-.4*u,-.48*u,-.2*u,-.38*u,0,-.35*u);
+    ctx.bezierCurveTo(.2*u,-.38*u,.4*u,-.48*u,.86*u,-.68*u);
+    ctx.lineTo(.9*u,-.58*u);
+    ctx.bezierCurveTo(.85*u,-.44*u,.4*u,-.26*u,0,-.18*u);
+    ctx.closePath();
+    ctx.fillStyle='#0096ff';ctx.fill();
+    ctx.lineWidth=l*.9;ctx.strokeStyle=INK;ctx.stroke();
+
+    // สันไฮไลท์สีขาวทรงเม็ดยาบนแถบสีฟ้ากราบขวา
+    ctx.beginPath();
+    ctx.ellipse(.52*u,-.46*u,.16*u,.045*u,-.2,0,7);
+    ctx.fillStyle='#ffffff';ctx.fill();
+
+    // 5. ช่องตะแกรงระบายอากาศ 3 แถบดำบนดาดฟ้าหน้า (Foredeck Grille Slats)
+    ctx.fillStyle='#202432';
+    RR(-.18*u,-.58*u,.36*u,.035*u,.015*u,'#202432',0);
+    RR(-.13*u,-.53*u,.26*u,.032*u,.015*u,'#202432',0);
+    RR(-.08*u,-.48*u,.16*u,.03*u,.015*u,'#202432',0);
+
+    // 6. กระจกหน้าห้องคนขับทรงสปอร์ตโค้งมน 2 บาน (Sporty Tinted Blue Windshield)
+    // บานซ้าย
+    ctx.beginPath();
+    ctx.moveTo(-.04*u,-.66*u);
+    ctx.lineTo(-.68*u,-.68*u);
+    ctx.bezierCurveTo(-.65*u,-.86*u,-.38*u,-.98*u,-.04*u,-.98*u);
+    ctx.closePath();
+    ctx.fillStyle='#4ec5ff';ctx.fill();
+    ctx.lineWidth=l*1.1;ctx.strokeStyle=INK;ctx.stroke();
+
+    ctx.save();ctx.clip();
+    ctx.beginPath();ctx.ellipse(-.36*u,-.84*u,.22*u,.06*u,.6,0,7);ctx.fillStyle='rgba(255,255,255,.85)';ctx.fill();
+    ctx.restore();
+
+    // บานขวา
+    ctx.beginPath();
+    ctx.moveTo(.04*u,-.66*u);
+    ctx.lineTo(.68*u,-.68*u);
+    ctx.bezierCurveTo(.65*u,-.86*u,.38*u,-.98*u,.04*u,-.98*u);
+    ctx.closePath();
+    ctx.fillStyle='#4ec5ff';ctx.fill();
+    ctx.lineWidth=l*1.1;ctx.strokeStyle=INK;ctx.stroke();
+
+    ctx.save();ctx.clip();
+    ctx.beginPath();ctx.ellipse(.36*u,-.84*u,.22*u,.06*u,.6,0,7);ctx.fillStyle='rgba(255,255,255,.85)';ctx.fill();
+    ctx.restore();
+
+    // 7. หลังคาห้องโดยสารสีเข้มและพนักพิงเบาะสีฟ้า 2 ตัว (Dark Roof & Twin Blue Seats)
+    ctx.beginPath();
+    ctx.ellipse(0,-.96*u,.46*u,.16*u,0,0,7);
+    ctx.fillStyle='#2b3040';ctx.fill();ctx.lineWidth=l;ctx.strokeStyle=INK;ctx.stroke();
+
+    // เบาะซ้าย
+    E(-.24*u,-1.14*u,.19*u,.15*u,'#0084ff',l);
+    E(-.24*u,-1.18*u,.12*u,.09*u,'#0060c0',0);
+    // เบาะขวา
+    E(.24*u,-1.14*u,.19*u,.15*u,'#0084ff',l);
+    E(.24*u,-1.18*u,.12*u,.09*u,'#0060c0',0);
+
+    // 8. เสาธงชาติไทยด้านหลังคาบนสุด (Thai Flag on Mast)
+    ctx.beginPath();
+    ctx.moveTo(0,-.96*u);ctx.lineTo(0,-1.5*u);
+    ctx.lineWidth=l*1.3;ctx.strokeStyle='#141226';ctx.stroke();
+    circ(0,-1.5*u,.045*u);
+    
+    // ผืนธงไตรรงค์
+    const flW=.38*u,flH=.24*u,flX=0,flY=-1.48*u;
+    const stripeH=flH/5;
+    ctx.fillStyle='#ee1c25';ctx.fillRect(flX,flY,flW,stripeH);
+    ctx.fillStyle='#ffffff';ctx.fillRect(flX,flY+stripeH,flW,stripeH);
+    ctx.fillStyle='#242858';ctx.fillRect(flX,flY+stripeH*2,flW,stripeH);
+    ctx.fillStyle='#ffffff';ctx.fillRect(flX,flY+stripeH*3,flW,stripeH);
+    ctx.fillStyle='#ee1c25';ctx.fillRect(flX,flY+stripeH*4,flW,stripeH);
+    ctx.lineWidth=Math.max(1,l*.7);ctx.strokeStyle=INK;ctx.strokeRect(flX,flY,flW,flH);
   }
   ctx.restore();
   if(dbg)dbgBox(o,z);
@@ -721,7 +1090,7 @@ function bldg0(m,sd,zn,zf,Z,par){
 function tod(d){const p=(((d%CYC)+CYC)%CYC)/CYC*4,i=p|0,e=clamp((p-i-.25)*2,0,1),q=e*e*(3-2*e),A=KF[i],B2=KF[(i+1)&3];
   for(const k of['t','b','f','n'])for(let j=0;j<3;j++)cur[k][j]=lerp(A[k][j],B2[k][j],q);
   for(const k of['sun','gold','dk','lt','st'])cur[k]=lerp(A[k],B2[k],q);cur.nm=(q<.5?A:B2).nm}
-const WR=[],glows=[],wp=[null,null],D_QUEUE=[],TF=['#a51931','#f4f5f8','#2d2a4a','#2d2a4a','#f4f5f8','#a51931'],SCOL=['#e8412f','#ffd166','#39a9ff','#ff7ab6','#7ddc5a'];
+const WR=[],glows=[],wp=[null,null],D_QUEUE=[],WORLD_ITEMS=[],TF=['#a51931','#f4f5f8','#2d2a4a','#2d2a4a','#f4f5f8','#a51931'],SCOL=['#e8412f','#ffd166','#39a9ff','#ff7ab6','#7ddc5a'];
 const SG=['ข้าวแกง','ก๋วยเตี๋ยว','ร้านชำ','ตัดผม','ส้มตำ','ชาเย็น','ซ่อมรถ','ห้องเช่า','โชห่วย','กาแฟสด'];
 const glow=(x,y,r)=>{if(cur.lt>.15)glows.push(x,y,r)};
 function txt(t,x,z,y,k,col){const q=P(x,z,y);if(q.s<6)return;ctx.font=`700 ${q.s*k}px Mali,sans-serif`;ctx.textAlign='center';ctx.fillStyle=col;ctx.fillText(t,q.x,q.y)}
@@ -1216,14 +1585,14 @@ function victory(sd,z){ // อนุสาวรีย์ชัยสมรภ�
   }
 }
 function paragon(sd,z){
-  // สยามพารากอน (Siam Paragon - ปรับให้สูงสง่างาม ยิ่งใหญ่ และควบคุมขอบเขตแกน X ไม่ให้รุกล้ำเลนน้ำ)
-  const xInner=sd*(BANK+1.8),w=11.5,xOuter=sd*(BANK+1.8+w);
-  const a=Math.min(xInner,xOuter),b=Math.max(xInner,xOuter),H=22,mid=(a+b)/2,dp=5.5;
+  // สยามพารากอน (Siam Paragon - ปรับตำแหน่งแกน X ถอยร่นไปด้านหลังอย่างสง่างาม ไม่รุกล้ำพื้นที่ห้องแถวริมทาง)
+  const xInner=sd*(BANK+6.8),w=13,xOuter=sd*(BANK+6.8+w);
+  const a=Math.min(xInner,xOuter),b=Math.max(xInner,xOuter),H=24,mid=(a+b)/2,dp=6.5;
   B(sd,xInner,w,z,dp,0,H,cur.lt>.45?'#e0f2fe':'#0284c7');
   
   // แผงกระจกคริสตัลมรกตหลายระดับ (Multi-Tiered Crystal Glass Facades)
   for(let fl=0;fl<5;fl++){
-    const y0=fl*4.2,y1=y0+3.8;
+    const y0=fl*4.5,y1=y0+4.1;
     fq(a+.4,b-.4,z,y0,y1,cur.lt>.45?'#fef08a':'#38bdf8');
     for(let m=1;m<6;m++){
       const mx=a+.4+m*((b-a-.8)/6);
@@ -1231,11 +1600,11 @@ function paragon(sd,z){
     }
   }
   // ยอดอาคารและป้ายชื่อ SIAM PARAGON สีทองอร่าม
-  fq(a-.3,b+.3,z,H,H+1.2,'#eab308');
-  fq(mid-3.8,mid+3.8,z,H+1.2,H+3.4,'#0f172a');
-  fq(mid-3.8,mid+3.8,z,H+3.3,H+3.5,'#facc15');
-  txt('SIAM PARAGON',mid,z,H+2.1,.48,'#fde047');
-  const qP=P(mid,z,H+2.1);
+  fq(a-.3,b+.3,z,H,H+1.4,'#eab308');
+  fq(mid-4.2,mid+4.2,z,H+1.4,H+3.8,'#0f172a');
+  fq(mid-4.2,mid+4.2,z,H+3.7,H+3.9,'#facc15');
+  txt('SIAM PARAGON',mid,z,H+2.3,.48,'#fde047');
+  const qP=P(mid,z,H+2.3);
   if(qP.s>3)glow(qP.x,qP.y,qP.s*1.8);
 }
 function yao(sd,z){const xc=sd*(BANK+8.2),R='#c81e2b';fq(xc-3.5,xc-2.7,z,0,7,R);fq(xc+2.7,xc+3.5,z,0,7,R);fq(xc-3.7,xc+3.7,z,7,8,'#a01822');fq(xc-3.7,xc+3.7,z,7.9,8.1,'#f2c230');
@@ -1387,25 +1756,46 @@ function drawBtsOverpass(bz,t){
   fq(-spanW,spanW,bz,beamY0,beamY0+.14,'#7a8390');
   fq(-spanW,spanW,bz,beamY1-.14,beamY1,'#c5cfdc');
   
-  // 4. แผ่นป้ายสีน้ำเงินกรุงเทพมหานคร (Bangkok City Blue Banner) ตรงกลางเหนือถนน
-  const bW=5.4,banY0=beamY0+.2,banY1=beamY1-.2;
-  fq(-bW,bW,bz,banY0,banY1,'#0b5ca8');
-  fq(-bW,bW,bz,banY1-.04,banY1,'#ffffff');
-  fq(-bW,bW,bz,banY0,banY0+.04,'#ffffff');
+  // 4. แผ่นป้ายและข้อความ "กรุงเทพ…ชีวิตดีๆที่ลงตัว" บนคานรถไฟฟ้า (Faux-3D Perspective Scaling & Dynamic 3D Centering)
+  const banY0=beamY0+.2,banY1=beamY1-.2,banYMid=(banY0+banY1)/2;
+  const qMid=P(0,bz,banYMid); // จุดกึ่งกลาง 3D Projection ของสะพาน ณ ระยะ bz
   
-  const qMid=P(0,bz,(banY0+banY1)/2);
-  if(qMid.s>6){
-    ctx.fillStyle='rgba(255,255,255,.16)';
-    for(let ox=-4.2;ox<=4.2;ox+=1.05){
-      const pD=P(ox,bz,(banY0+banY1)/2);circ(pD.x,pD.y,pD.s*.045);
-    }
-  }
-  
-  if(qMid.s>3.2){
-    const fontSize=Math.min(34,qMid.s*.38);
+  if(qMid.s>1.8){
+    // ปรับขนาดฟอนต์ตามระยะทางและความลึก 3D (Z-depth perspective scaling) ขยายใหญ่ขึ้นเมื่อเข้าใกล้กล้อง
+    const fontSize=Math.max(3,0.44*qMid.s);
     ctx.font=`700 ${fontSize}px Mali,sans-serif`;
-    ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.lineWidth=Math.max(2,qMid.s*.06);ctx.strokeStyle='#00254d';
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+
+    // คำนวณความกว้างของข้อความจริงด้วย ctx.measureText()
+    const metrics=ctx.measureText('กรุงเทพ…ชีวิตดีๆที่ลงตัว');
+    const textW=metrics.width;
+    const padX=Math.max(3,0.28*qMid.s);
+    const boxW=textW+padX*2;
+    const boxH=Math.max(fontSize*1.35,(beamY1-beamY0)*0.65*qMid.s);
+
+    // ตำแหน่งจัดกึ่งกลางตามพิกัด 3D Projection ของรางและสะพาน (qMid.x, qMid.y)
+    const boxX=qMid.x-boxW/2;
+    const boxY=qMid.y-boxH/2;
+    const rad=Math.max(2,boxH*0.18);
+
+    // วาดพื้นหลังสีน้ำเงินขนาดพอดีรอบข้อความเท่านั้น (Wrapping ONLY exactly around the text)
+    RR(boxX,boxY,boxW,boxH,rad,'#0b5ca8',Math.max(1,0.04*qMid.s));
+    
+    // ขลิบแถบเส้นสีขาวบน-ล่างของแผ่นป้าย
+    ctx.fillStyle='#ffffff';
+    ctx.fillRect(boxX+rad*0.5,boxY,boxW-rad,Math.max(1,0.035*qMid.s));
+    ctx.fillRect(boxX+rad*0.5,boxY+boxH-Math.max(1,0.035*qMid.s),boxW-rad,Math.max(1,0.035*qMid.s));
+
+    // จุดไฟประดับสีขาวหัว-ท้ายป้ายเมื่อเข้ามาใกล้พอ
+    if(qMid.s>6){
+      circ(boxX+padX*0.45,qMid.y,Math.max(1.2,qMid.s*0.035));
+      circ(boxX+boxW-padX*0.45,qMid.y,Math.max(1.2,qMid.s*0.035));
+    }
+
+    // วาดตัวหนังสือสีขาว ขอบเงาสีน้ำเงินเข้ม คมชัดและสเกล 3D ถูกต้องสมจริง
+    ctx.lineWidth=Math.max(1.2,fontSize*0.14);
+    ctx.strokeStyle='#00254d';
     ctx.strokeText('กรุงเทพ…ชีวิตดีๆที่ลงตัว',qMid.x,qMid.y);
     ctx.fillStyle='#ffffff';
     ctx.fillText('กรุงเทพ…ชีวิตดีๆที่ลงตัว',qMid.x,qMid.y);
@@ -1463,7 +1853,7 @@ function render(al,fd){
   WR.length=0;glows.length=0;wp[0]=wp[1]=null;
   const OVERPASS_GAP=280;
   const minBtsM=Math.floor((dist-8)/OVERPASS_GAP),maxBtsM=Math.ceil((dist+85)/OVERPASS_GAP);
-  // 1. ถนน แม่น้ำ และตลิ่ง (Street, River Surface, Canal Banks)
+  // 2. Layer 2: พื้นดิน ถนน ทางเท้า และผิวน้ำ (Ground, Street, Sidewalk, River Surface - Far to Near)
   for(let m=m1;m>=m0;m--){
     const fw=m*seg,zn=Math.min(dist-fw,7.2),zf=Math.max(dist-fw-seg,-90);if(zf>7.2||zn<-90)continue;
     const par=m&1,Z=zoneAt(fw);
@@ -1472,20 +1862,59 @@ function render(al,fd){
     quad(-60,-BANK,zn,zf,GC[par]);quad(BANK,60,zn,zf,GC[par]);
   }
 
-  // 2. Layer สะพานรถไฟฟ้า MRT/BTS (อยู่วงหลังตึก ไม่บังตึก - Behind building layer)
+  // 3. Layer 3: โครงสร้าง 3 มิติ (Landmarks, Roadside Buildings, MRT Overpasses)
+  // จัดกลุ่มและเรียงลำดับตามความลึกจริง (Strict Depth Sorting from Far to Near: a.z - b.z)
+  // หากอยู่ในระนาบความลึกเดียวกัน ใช้ Sub-Layer Priority (Landmark [1] -> Roadside [2] -> Overpass [3])
+  WORLD_ITEMS.length=0;
+
+  // เพิ่มสะพานรถไฟฟ้า BTS/MRT ที่อยู่ในระยะสายตา
   for(let bm=maxBtsM;bm>=minBtsM;bm--){
     const bz=dist-bm*OVERPASS_GAP;
     if(bz>-85&&bz<=7.2){
-      drawBtsOverpass(bz,s.t);
+      WORLD_ITEMS.push({
+        z:bz,
+        p:3, // สะพานลอยยกระดับพาดผ่านด้านหน้าอาคารในระยะ Z เดียวกัน
+        f:()=>drawBtsOverpass(bz,s.t)
+      });
     }
   }
 
-  // 3. Layer อาคาร ตึกแถว และแลนด์มาร์ก (Building & Landmark Layer - วาดอยู่ด้านหน้าสะพาน ทำให้สะพานไม่อยู่ Layer แรกและไม่บังตึก)
+  // เพิ่มแลนด์มาร์กและห้องแถวริมทางตามช่วงระยะ
   for(let m=m1;m>=m0;m--){
     const fw=m*seg,zn=Math.min(dist-fw,7.2),zf=Math.max(dist-fw-seg,-90);if(zf>7.2||zn<-90)continue;
     const par=m&1,Z=zoneAt(fw);
-    landmark(m,dist);bldg(m,-1,zn,zf,Z,par);bldg(m,1,zn,zf,Z,par);roadside(m,dist);
+    const zMid=(zn+zf)/2;
+
+    // แลนด์มาร์กฉากหลัง (Background Landmark - ตั้งอยู่ลึกบนตลิ่งด้านหลัง)
+    if(m%14===7){
+      const zLm=dist-m*6-3;
+      if(zLm<=4&&zLm>=-93){
+        WORLD_ITEMS.push({
+          z:zLm,
+          p:1, // อยู่ระนาบหลังสุดของฝั่งแผ่นดิน
+          f:()=>landmark(m,dist)
+        });
+      }
+    }
+
+    // ห้องแถวริมทาง ร้านค้า และวิถีชีวิตบนทางเท้า (Roadside Buildings)
+    WORLD_ITEMS.push({
+      z:zMid,
+      p:2, // อยู่ด้านหน้าแลนด์มาร์กฉากหลัง
+      f:()=>{
+        bldg(m,-1,zn,zf,Z,par);
+        bldg(m,1,zn,zf,Z,par);
+        roadside(m,dist);
+      }
+    });
   }
+
+  // เรียงลำดับจาก ไกล -> ใกล้ (Far to Near: ascending Z)
+  WORLD_ITEMS.sort((a,b)=>{
+    if(Math.abs(a.z-b.z)>0.6)return a.z-b.z;
+    return a.p-b.p;
+  });
+  for(let i=0;i<WORLD_ITEMS.length;i++)WORLD_ITEMS[i].f();
   post();
   drawWakes(zoff);
   const pl=.5+.5*Math.sin(s.t*10);
@@ -1508,7 +1937,7 @@ function render(al,fd){
     const f=s.fx[i];f.t+=fd;if(f.t>1.1){s.fx.splice(i,1);continue}
     const y=f.y-f.t*50;ctx.globalAlpha=1-f.t/1.1;ctx.font='700 24px Mali,sans-serif';ctx.textAlign='center';ctx.lineWidth=6;ctx.strokeStyle=INK;ctx.strokeText(f.txt,f.x,y);ctx.fillStyle=f.col;ctx.fillText(f.txt,f.x,y);ctx.globalAlpha=1;
   }
-  const bl=s.state==='PAUSED'?'เล่นต่อ':'หยุด';if($('#bp').textContent!==bl)$('#bp').textContent=bl;$('#bp').disabled=!(s.state==='RUN'||s.state==='PAUSED');
+  const bl=s.state==='PAUSED'?'เล่นต่อ':(s.state==='COUNTDOWN'?'เตรียมพร้อม...':'หยุด');if($('#bp').textContent!==bl)$('#bp').textContent=bl;$('#bp').disabled=!(s.state==='RUN'||s.state==='PAUSED'||s.state==='COUNTDOWN');
   const zz=zoneAt(s.dist),zt='โซน '+(zz+1)+': '+ZN[zz]+' · '+cur.nm;if($('#hz').textContent!==zt)$('#hz').textContent=zt;
   $('#hs').textContent=Math.floor(s.score);$('#hd').textContent=Math.floor(s.dist)+' ม. · '+s.v.toFixed(0)+' ม./วิ';
   $('#hc').textContent=s.combo>1?'คอมโบ x'+s.combo:'';$('#hr').textContent='ช่วยแล้ว '+s.rescued+' คน';
@@ -1523,7 +1952,7 @@ function frame(ms){
     while(acc>=FIXED){savePrev();step(FIXED);acc-=FIXED;if(S.state!=='RUN')break}
   }
   if(S.state==='MENU')S.t+=fd;
-  render(S.state==='RUN'?acc/FIXED:1,S.state==='PAUSED'?0:fd);
+  render(S.state==='RUN'?acc/FIXED:1,(S.state==='PAUSED'||S.state==='COUNTDOWN')?0:fd);
   requestAnimationFrame(frame);
 }
 newGame();showMenu();resize();requestAnimationFrame(frame);

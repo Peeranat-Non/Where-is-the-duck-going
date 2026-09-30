@@ -236,6 +236,66 @@ button:focus-visible,input:focus-visible{
   animation:ws 3s linear infinite;
 }
 
+/* Countdown Overlay */
+#cd{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  pointer-events:none;
+  z-index:40;
+}
+#cd[hidden]{
+  display:none;
+}
+.cdn-text{
+  font-size:clamp(80px,25vw,160px);
+  font-weight:700;
+  color:var(--duck);
+  -webkit-text-stroke:4px #1a1240;
+  paint-order:stroke fill;
+  text-shadow:0 8px 0 #e8412f,0 14px 0 #1a1240;
+  animation:cdPop .45s cubic-bezier(0.175,0.885,0.32,1.275);
+}
+.cdn-text.go{
+  color:#55efc4;
+  text-shadow:0 8px 0 #00b894,0 14px 0 #1a1240;
+}
+@keyframes cdPop{
+  0%{transform:scale(0.3);opacity:0}
+  60%{transform:scale(1.2);opacity:1}
+  100%{transform:scale(1);opacity:1}
+}
+
+/* Test Mode Badge & Active Styles */
+.test-badge{
+  display:inline-block;
+  margin-left:8px;
+  padding:2px 8px;
+  font-size:12px;
+  font-weight:700;
+  color:#1a1240;
+  background:#7dff9a;
+  border:2px solid #1a1240;
+  border-radius:6px;
+  box-shadow:0 2px 0 rgba(0,0,0,.3);
+  vertical-align:middle;
+}
+.test-badge[hidden]{
+  display:none;
+}
+#tools button#bt.active{
+  background:#1b5e20;
+  color:#7dff9a;
+  outline:2px solid #7dff9a;
+}
+.mb#mt.active-mode{
+  background:#7dff9a;
+  color:#1a1240;
+  box-shadow:0 4px 0 #3eb862;
+}
+
 .mb{
   width:min(280px,78vw);
   font-size:20px;
