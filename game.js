@@ -118,14 +118,21 @@ class SoundManager{
       gain.gain.setValueAtTime(.26,now);gain.gain.exponentialRampToValueAtTime(.001,now+.32);
       osc.start(now);osc.stop(now+.32);
     }else if(t==='speedboat_warn'){
-      osc.type='sawtooth';osc.frequency.setValueAtTime(320,now);osc.frequency.setValueAtTime(460,now+.12);
-      gain.gain.setValueAtTime(.24,now);gain.gain.exponentialRampToValueAtTime(.001,now+.38);
-      osc.start(now);osc.stop(now+.38);
+      // เสียงหวูด/ไซเรนเตือนเรือสปีดโบ๊ท 2 โทนสูง-ต่ำคมชัด (Marine Warning Blast)
+      osc.type='sawtooth';
+      osc.frequency.setValueAtTime(380,now);
+      osc.frequency.setValueAtTime(560,now+.14);
+      gain.gain.setValueAtTime(.28,now);
+      gain.gain.exponentialRampToValueAtTime(.001,now+.45);
+      osc.start(now);osc.stop(now+.45);
     }else if(t==='horse_run'){
-      osc.type='triangle';osc.frequency.setValueAtTime(190,now);
-      osc.frequency.exponentialRampToValueAtTime(75,now+.08);
-      gain.gain.setValueAtTime(.25,now);gain.gain.exponentialRampToValueAtTime(.001,now+.12);
-      osc.start(now);osc.stop(now+.12);
+      // เสียงฝีเท้าม้าควบย่ำน้ำเป็นจังหวะกระแทกกระทั้น (Galloping Hoofbeats)
+      osc.type='triangle';
+      osc.frequency.setValueAtTime(220,now);
+      osc.frequency.exponentialRampToValueAtTime(70,now+.06);
+      gain.gain.setValueAtTime(.32,now);
+      gain.gain.exponentialRampToValueAtTime(.001,now+.13);
+      osc.start(now);osc.stop(now+.13);
     }
   }
 }
@@ -253,17 +260,21 @@ function npcStep(o,s,dt){
     }
     if(o.st==='go'){
       o.x+=o.dir*3.4*dt;
-      // ละอองน้ำกระจายรอบขาม้าขณะวิ่งย่ำน้ำ (Dynamic Water Splashes at horse feet)
-      if(Math.random()<0.35)spawnSplash(o.x,0,o.z,2,0.9,-o.dir*1.2);
-      if(Math.random()<0.25)s.wakes.push({x:o.x,z:o.z,r:.25,maxR:1.3,life:0,maxLife:.55,type:'droplet'});
+      // ละอองน้ำกระจายรอบขาม้าขณะวิ่งย่ำน้ำ (Dynamic Water Splashes at horse feet synced to gallop)
+      const hoofPulse=Math.abs(Math.sin(S.t*16));
+      if(hoofPulse>0.72){
+        spawnSplash(o.x,0,o.z,3,1.3,-o.dir*1.5);
+        s.wakes.push({x:o.x,z:o.z,r:.28,maxR:1.6,life:0,maxLife:.58,type:'droplet'});
+      }
       if(o.dir*o.x>=4){o.x=o.dir*4;o.st='done'}
     }
   }else if(o.type==='speedboat'){
     const t=s.tube,dx=t.x-o.x;
     if(Math.abs(o.z-t.z)<2&&Math.abs(dx)<2.4&&Math.abs(dx)>.1)t.vx+=Math.sign(dx)*6*dt;
-    // คลื่นและละอองน้ำท้ายเรือสปีดโบ๊ตฟุ้งกระจาย (Prominent trailing wake & spray particles)
-    if(Math.random()<0.45)spawnSplash(o.x+(Math.random()-.5)*.5,0,o.z-1.2,3,1.4,(Math.random()-.5)*3);
-    if(Math.random()<0.3)s.wakes.push({x:o.x+(Math.random()-.5)*.3,z:o.z-1,r:.4,maxR:2.4,life:0,maxLife:.7,type:'tube',vx:(Math.random()-.5)*2});
+    // คลื่นแหวกน้ำและละอองน้ำท้ายเรือสปีดโบ๊ตฟุ้งกระจาย (Prominent trailing wake & spray particles)
+    spawnSplash(o.x+(Math.random()-.5)*.5,0,o.z-1.3,3,1.6,(Math.random()-.5)*3.2);
+    s.wakes.push({x:o.x-0.35,z:o.z-1.1,r:.45,maxR:2.6,life:0,maxLife:.75,type:'tube',vx:-1.4});
+    s.wakes.push({x:o.x+0.35,z:o.z-1.1,r:.45,maxR:2.6,life:0,maxLife:.75,type:'tube',vx:1.4});
   }
 }
 function fx(txt,col){const p=P(S.tube.x,S.tube.z);S.fx.push({txt,x:p.x,y:p.y-p.s*1.2,t:0,col})}
@@ -1080,12 +1091,20 @@ function bldg0(m,sd,zn,zf,Z,par){
   hq(sd*BANK,xs,zn,zf,.45,par?'#f0d9a8':'#e6cc94');
   const pal=[['#ffd6a5','#caffbf','#fdffb6'],['#ffc6ff','#bdb2ff','#ffd6e0'],['#fff3d6','#fff3d6','#ffe9b8']][Z],wall=pal[h*3|0],roof=['#8aa4c8','#9a6ad8','#ff7a59'][Z];
   vq(xs,zn,z1,0,hb,wall);vq(xs,zn,z1,0,.7,'#8a7a5a');fq(xs,xw,zn,0,hb,sh(wall,.8));fq(xs,xw,zn,0,.7,'#6a5a3c');
-  if(h2>.3)vq(xs,zn-.8,zn-2.2,1.3,2.3,'#3a4a6a');
+  // หน้าต่างข้างตึกผูกพิกัดสัมพัทธ์ (Relative Coordinates) กับผนังด้านข้าง ไม่ลอยหลุด
+  if(h2>.3){
+    const wZ0=lerp(zn,z1,.22),wZ1=lerp(zn,z1,.62),wY0=hb*.45,wY1=hb*.82;
+    vq(xs,wZ0,wZ1,wY0,wY1,'#3a4a6a');
+    const midZ=(wZ0+wZ1)*.5;
+    vq(xs,midZ-.04,midZ+.04,wY0,wY1,'#ffffff');
+  }
   const rh=Z===2?1.9:1.3;
   poly(P(xs,zn,hb),P(xw,zn,hb),P(xm,zn,hb+rh),null,sh(roof,.85));poly(P(xs,zn,hb),P(xs,z1,hb),P(xm,z1,hb+rh),P(xm,zn,hb+rh),roof);
   if(Z===2)poly(P(xm-.1,zn,hb+rh),P(xm+.1,zn,hb+rh),P(xm,zn,hb+rh+.8),null,'#ffcf4a');
-  if(Z===0&&h>.55)for(let q=0;q<3;q++)vq(sd*(BANK+.9),zn-.6-q*1.2,zn-1.1-q*1.2,1.4,2.2,['#e88ab0','#f4ece0','#ffd166'][q]);
-  if(Z<2&&h2<.4){const q=P(xs+sd*.9,(zn+z1)/2,hb+.55);if(q.s>3){ctx.fillStyle=['#e88ab0','#ffd166','#f4ece0'][h*3|0];ctx.fillRect(q.x-.12*q.s,q.y-.3*q.s,.24*q.s,.3*q.s);ctx.fillStyle='#e9b98a';circ(q.x,q.y-.42*q.s,.11*q.s);ctx.fillStyle='#f4ece0';ell(q.x+.3*q.s,q.y,.14*q.s,.05*q.s)}}
+  if(Z===0&&h>.55)for(let q=0;q<3;q++){
+    const qZ0=lerp(zn,z1,.12+q*.26),qZ1=lerp(zn,z1,.28+q*.26);
+    vq(sd*(BANK+.9),qZ0,qZ1,hb*.45,hb*.75,['#e88ab0','#f4ece0','#ffd166'][q]);
+  }
 }
 function tod(d){const p=(((d%CYC)+CYC)%CYC)/CYC*4,i=p|0,e=clamp((p-i-.25)*2,0,1),q=e*e*(3-2*e),A=KF[i],B2=KF[(i+1)&3];
   for(const k of['t','b','f','n'])for(let j=0;j<3;j++)cur[k][j]=lerp(A[k][j],B2[k][j],q);
@@ -1344,18 +1363,43 @@ function bldg(m,sd,zn,zf,Z,par){ // ห้องแถวหลากสไต�
     const c=SCOL[(m+(sd>0?2:0))%5];
     for(let i=0;i<3;i++){
       const a=lerp(xs,xw,i/3+.03),b=lerp(xs,xw,(i+1)/3-.03);
+      const bayW=b-a;
       if(Z===1){ // โซนตลาดน้ำ: บ้านไม้ริมน้ำ
         fq(a,b,zn,0,1.4,i===1?'#8a522a':'#6b3e1e');
-        if(hb>3.4)fq(a+(b-a)*.15,b-(b-a)*.15,zn,hb-1.3,hb-.4,'#3d6e5a');
+        if(hb>3.2){
+          // หน้าต่างไม้ชั้นบน ผูกพิกัดสัมพัทธ์ (Relative Coordinates) กับผนังแม่
+          const wY0=hb*0.58,wY1=hb*0.88;
+          const wX0=a+bayW*0.18,wX1=b-bayW*0.18;
+          fq(wX0,wX1,zn,wY0,wY1,'#3d6e5a');
+          fq(wX0,wX1,zn,(wY0+wY1)*0.5-0.03,(wY0+wY1)*0.5+0.03,'#224434');
+        }
       }else if(Z===2){ // โซนเมืองเก่า: สถาปัตยกรรมชิโน-โปรตุกีส หน้าต่างซุ้มโค้ง
         fq(a,b,zn,0,1.4,i===1?'#f7ebd2':'#edd8b4');
-        if(hb>3.4)fq(a+(b-a)*.12,b-(b-a)*.12,zn,hb-1.4,hb-.35,lit?'#ffe89c':'#4a6572');
+        if(hb>3.2){
+          const wY0=hb*0.54,wY1=hb*0.88;
+          const wX0=a+bayW*0.16,wX1=b-bayW*0.16;
+          fq(wX0,wX1,zn,wY0,wY1,lit?'#ffe89c':'#4a6572');
+          fq(wX0,wX1,zn,wY1-0.06,wY1,'#d2be98');
+          const midX=(wX0+wX1)*0.5;
+          fq(midX-0.03,midX+0.03,zn,wY0,wY1,'#ffffff');
+        }
       }else{ // โซนซอยชุมชน: ตึกพาณิชย์โมเดิร์น ประตูเหล็กม้วน
         fq(a,b,zn,0,1.4,i===1?'#d9dee3':'#8b9db0');
-        if(hb>3.6){
-          fq(a+(b-a)*.15,b-(b-a)*.15,zn,hb-1.3,hb-.4,lit?'#ffd75e':'#5f8fc0');
-          // คอมเพรสเซอร์แอร์
-          if(i===0)RR(P(a+.3,zn,hb-.8).x,P(a+.3,zn,hb-.8).y,.2*q.s,.12*q.s,1,'#e4e8ec',1);
+        if(hb>3.2){
+          const wY0=hb*0.56,wY1=hb*0.88;
+          const wX0=a+bayW*0.16,wX1=b-bayW*0.16;
+          fq(wX0,wX1,zn,wY0,wY1,lit?'#ffd75e':'#5f8fc0');
+          // วงกบอลูมิเนียมขาวแบ่ง 4 ช่อง
+          const midX=(wX0+wX1)*0.5,midY=(wY0+wY1)*0.5;
+          fq(midX-0.03,midX+0.03,zn,wY0,wY1,'#ffffff');
+          fq(wX0,wX1,zn,midY-0.03,midY+0.03,'#ffffff');
+          // คอมเพรสเซอร์แอร์ผูกตำแหน่ง 3D สัมพัทธ์ติดใต้หน้าต่างอย่างมั่นคง
+          if(i===0){
+            const acX0=wX0+0.04,acX1=wX0+0.38;
+            const acY0=wY0-0.34,acY1=wY0-0.06;
+            fq(acX0,acX1,zn,acY0,acY1,'#e4e8ec');
+            fq(acX0,acX1,zn,(acY0+acY1)*0.5-0.02,(acY0+acY1)*0.5+0.02,'#94a3b8');
+          }
         }
       }
     }
@@ -1756,11 +1800,12 @@ function drawBtsOverpass(bz,t){
   fq(-spanW,spanW,bz,beamY0,beamY0+.14,'#7a8390');
   fq(-spanW,spanW,bz,beamY1-.14,beamY1,'#c5cfdc');
   
-  // 4. แผ่นป้ายและข้อความ "กรุงเทพ…ชีวิตดีๆที่ลงตัว" บนคานรถไฟฟ้า (Faux-3D Perspective Scaling & Dynamic 3D Centering)
+  // 4. แผ่นป้ายและข้อความ "กรุงเทพ…ชีวิตดีๆที่ลงตัว" บนคานรถไฟฟ้า (Faux-3D Perspective Scaling & Responsive iPad Centering)
   const banY0=beamY0+.2,banY1=beamY1-.2,banYMid=(banY0+banY1)/2;
-  const qMid=P(0,bz,banYMid); // จุดกึ่งกลาง 3D Projection ของสะพาน ณ ระยะ bz
+  const qMid=P(0,bz,banYMid); // จุดกึ่งกลาง 3D Projection ของสะพานและราง ณ ระยะ bz
   
   if(qMid.s>1.8){
+    const textStr='กรุงเทพ…ชีวิตดีๆที่ลงตัว';
     // ปรับขนาดฟอนต์ตามระยะทางและความลึก 3D (Z-depth perspective scaling) ขยายใหญ่ขึ้นเมื่อเข้าใกล้กล้อง
     const fontSize=Math.max(3,0.44*qMid.s);
     ctx.font=`700 ${fontSize}px Mali,sans-serif`;
@@ -1768,37 +1813,49 @@ function drawBtsOverpass(bz,t){
     ctx.textBaseline='middle';
 
     // คำนวณความกว้างของข้อความจริงด้วย ctx.measureText()
-    const metrics=ctx.measureText('กรุงเทพ…ชีวิตดีๆที่ลงตัว');
-    const textW=metrics.width;
-    const padX=Math.max(3,0.28*qMid.s);
+    const metrics=ctx.measureText(textStr);
+    const textW=metrics.width||(fontSize*10);
+    const padX=Math.max(4,0.28*qMid.s);
     const boxW=textW+padX*2;
     const boxH=Math.max(fontSize*1.35,(beamY1-beamY0)*0.65*qMid.s);
 
-    // ตำแหน่งจัดกึ่งกลางตามพิกัด 3D Projection ของรางและสะพาน (qMid.x, qMid.y)
-    const boxX=qMid.x-boxW/2;
-    const boxY=qMid.y-boxH/2;
-    const rad=Math.max(2,boxH*0.18);
+    // ตำแหน่งจัดกึ่งกลางร่วมกันสำหรับทั้งกล่อง (fillRect) และตัวหนังสือ (fillText)
+    // คำนวณจาก qMid.x ซึ่งสะท้อนแกน 3D กลางราง ไม่เลื่อนเบ้ขวาบนจอ iPad หรือทุกสัดส่วนจอ
+    const centerX=qMid.x;
+    const centerY=qMid.y;
+    const rectX=centerX-boxW*0.5;
+    const rectY=centerY-boxH*0.5;
 
-    // วาดพื้นหลังสีน้ำเงินขนาดพอดีรอบข้อความเท่านั้น (Wrapping ONLY exactly around the text)
-    RR(boxX,boxY,boxW,boxH,rad,'#0b5ca8',Math.max(1,0.04*qMid.s));
+    // วาดพื้นหลังกล่องสีน้ำเงิน (fillRect) ขนาดพอดีรอบข้อความเท่านั้น
+    ctx.fillStyle='#0b5ca8';
+    ctx.fillRect(rectX,rectY,boxW,boxH);
+
+    // เส้นขอบสีน้ำเงินเข้มรอบกล่อง
+    ctx.strokeStyle='#00254d';
+    ctx.lineWidth=Math.max(1,0.04*qMid.s);
+    ctx.strokeRect(rectX,rectY,boxW,boxH);
     
     // ขลิบแถบเส้นสีขาวบน-ล่างของแผ่นป้าย
+    const stripeH=Math.max(1,0.035*qMid.s);
     ctx.fillStyle='#ffffff';
-    ctx.fillRect(boxX+rad*0.5,boxY,boxW-rad,Math.max(1,0.035*qMid.s));
-    ctx.fillRect(boxX+rad*0.5,boxY+boxH-Math.max(1,0.035*qMid.s),boxW-rad,Math.max(1,0.035*qMid.s));
+    ctx.fillRect(rectX,rectY,boxW,stripeH);
+    ctx.fillRect(rectX,rectY+boxH-stripeH,boxW,stripeH);
 
     // จุดไฟประดับสีขาวหัว-ท้ายป้ายเมื่อเข้ามาใกล้พอ
     if(qMid.s>6){
-      circ(boxX+padX*0.45,qMid.y,Math.max(1.2,qMid.s*0.035));
-      circ(boxX+boxW-padX*0.45,qMid.y,Math.max(1.2,qMid.s*0.035));
+      ctx.fillStyle='#ffffff';
+      circ(rectX+padX*0.45,centerY,Math.max(1.2,qMid.s*0.035));
+      circ(rectX+boxW-padX*0.45,centerY,Math.max(1.2,qMid.s*0.035));
     }
 
-    // วาดตัวหนังสือสีขาว ขอบเงาสีน้ำเงินเข้ม คมชัดและสเกล 3D ถูกต้องสมจริง
+    // วาดตัวหนังสือสีขาว ขอบเงาสีน้ำเงินเข้ม คมชัดและอยู่กึ่งกลางกล่องพอดี 100%
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
     ctx.lineWidth=Math.max(1.2,fontSize*0.14);
     ctx.strokeStyle='#00254d';
-    ctx.strokeText('กรุงเทพ…ชีวิตดีๆที่ลงตัว',qMid.x,qMid.y);
+    ctx.strokeText(textStr,centerX,centerY);
     ctx.fillStyle='#ffffff';
-    ctx.fillText('กรุงเทพ…ชีวิตดีๆที่ลงตัว',qMid.x,qMid.y);
+    ctx.fillText(textStr,centerX,centerY);
   }
   
   // 5. ราวกั้นคอนกรีตบนสะพาน
