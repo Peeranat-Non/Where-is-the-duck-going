@@ -14,8 +14,22 @@ app.get('/healthz', (req, res) => {
   res.status(200).send('OK');
 });
 
+// Disable caching for development and immediate asset delivery
+app.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
+
 // Serve static files from root directory
-app.use(express.static(__dirname));
+app.use(express.static(__dirname, {
+  etag: false,
+  maxAge: 0,
+  setHeaders: (res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  }
+}));
 
 // Direct route for /
 app.get('/', (req, res) => {

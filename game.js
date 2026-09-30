@@ -234,7 +234,7 @@ function newGame(){
 }
 function spawn(){
   const s=S,z=-75,r=Math.random(),d=s.dist,l=Math.floor(Math.random()*3);
-  if(r<.24)s.vic.push({x:LANE[Math.random()<.5?0:2],z,ph:Math.random()*6});
+  if(r<.24)s.vic.push({x:LANE[Math.random()<.5?0:2],z,ph:Math.random()*6,gender:Math.random()<.5?'girl':'boy'});
   else if(r<.36){s.obs.push({x:0,z,hw:3.2,hd:.5,h:.7,type:'wide'});s.gap=8}
   else if(r<.48&&d>150){
     const dir=Math.random()<.5?-1:1;
@@ -333,6 +333,15 @@ function step(dt){
   }
   for(let i=s.vic.length-1;i>=0;i--){
     const v=s.vic[i];v.z+=dz;
+    // ละอองน้ำและคลื่นน้ำฟุ้งกระจายรอบคนจมน้ำที่กำลังตะเกียกตะกาย (Continuous struggling water splashes)
+    if(v.z>-70&&v.z<10){
+      if(Math.random()<0.32){
+        spawnSplash(v.x+(Math.random()-.5)*.5,0,v.z+(Math.random()-.5)*.4,2,0.85);
+      }
+      if(Math.random()<0.2){
+        s.wakes.push({x:v.x+(Math.random()-.5)*.2,z:v.z,r:.18,maxR:1.1,life:0,maxLife:.45,type:'droplet'});
+      }
+    }
     if(touchVictim(s.tube,v)){ // แตะที่ความเร็วใดก็ได้ = ช่วยสำเร็จทันที
       s.combo++;s.rescued++;s.pass=Math.min(3,s.pass+1);s.score+=100*Math.min(s.combo,10);
       s.slow=.3;s.grace=.15;sfx.play('rescue');fx('ช่วยได้! x'+s.combo,'#7dff9a');s.vic.splice(i,1);continue;
@@ -545,16 +554,74 @@ function drawTube(p,tilt,n,h=0){
   ctx.beginPath();ctx.ellipse(0,tubeY-.05*u,.48*u,.22*u,0,0,7);ctx.fillStyle='#0e4a5d';ctx.fill();ctx.lineWidth=w*1.1;ctx.strokeStyle=INK;ctx.stroke();
   ctx.restore();
 
-  // 5. ผู้โดยสารที่ช่วยมาได้ (Peeking Rescued Chibi Passengers)
+  // 5. ผู้โดยสารที่ช่วยขึ้นมาบนห่วงยาง (Rescued Chibi Passengers sitting on the tube next to main character)
   for(let i=0;i<n;i++){
-    const sd=(i%2===0)?-1:1,px=sd*(.42+(i>>1)*.14)*u,py=-.58*u-(i>>1)*.1*u;
-    ctx.save();ctx.translate(px,py);
-    const vc=i===0?'#39ff14':i===1?'#ff5fa2':'#00e5ff';
-    RR(-.16*u,-.22*u,.32*u,.42*u,.1*u,vc,w*.8);
-    E(0,-.38*u,.17*u,.16*u,'#232130',w*.8);
-    E(-.16*u,-.38*u,.05*u,.06*u,'#ffb48e',w*.6);E(.16*u,-.38*u,.05*u,.06*u,'#ffb48e',w*.6);
-    ctx.beginPath();ctx.arc(0,-.38*u,.16*u,Math.PI,0);ctx.fillStyle=i===0?'#ffcf24':'#fff';ctx.fill();ctx.stroke();
-    E(-sd*.12*u,.16*u,.06*u,.05*u,'#ffb48e',w*.6);
+    const sd=(i%2===0)?-1:1;
+    // นั่งอยู่ข้างตัวละครหลักบนห่วงยาง (Smaller person sitting backward next to main character)
+    const px=(i===2)?0:sd*(.46+(i>>1)*.1)*u;
+    const py=(i===2)?(tubeY+.12*u):(tubeY-.08*u-(i>>1)*.05*u);
+    const scale=(i===2)?.6:.68;
+    const isGirl=(i%2===0); // สลับเพศหญิง/ชายตามรูป Reference
+
+    ctx.save();
+    ctx.translate(px,py);
+    ctx.scale(scale,scale);
+
+    // ตัวและเสื้อนักเรียนสีขาว
+    RR(-.22*u,-.32*u,.44*u,.38*u,.08*u,'#ffffff',w*1.15);
+    // กระโปรงนักเรียนหญิง/กางเกงขาสั้นชายสีกรมท่า/ดำ
+    RR(-.24*u,-.04*u,.48*u,.16*u,.04*u,'#1e293b',w*1.15);
+
+    // มือเล็กๆ เกาะขอบห่วงยางแน่นหนาปลอดภัย (Hands clutching the inner tube rim)
+    E(-.24*u,-.02*u,.07*u,.06*u,'#ffb48e',w);
+    E(.24*u,-.02*u,.07*u,.06*u,'#ffb48e',w);
+
+    // ศีรษะและใบหน้าสไตล์จิบิ
+    E(0,-.52*u,.25*u,.23*u,'#ffb48e',w*1.1);
+    // หูสองข้าง
+    E(-.27*u,-.52*u,.06*u,.07*u,'#ffb48e',w);
+    E(.27*u,-.52*u,.06*u,.07*u,'#ffb48e',w);
+
+    // ตาและรอยยิ้มโล่งอกดีใจที่รอดชีวิต (Relieved happy expression ^^)
+    ctx.strokeStyle=INK;ctx.lineWidth=w*1.2;ctx.lineCap='round';
+    // ตาโค้งยิ้มมีความสุข
+    ctx.beginPath();ctx.arc(-.1*u,-.54*u,.042*u,Math.PI*1.1,Math.PI*1.9);ctx.stroke();
+    ctx.beginPath();ctx.arc(.1*u,-.54*u,.042*u,Math.PI*1.1,Math.PI*1.9);ctx.stroke();
+    // แก้มชมพูระเรื่อ
+    ctx.fillStyle='rgba(251,113,133,0.6)';
+    circ(-.15*u,-.48*u,.038*u);circ(.15*u,-.48*u,.038*u);
+    // รอยยิ้ม
+    ctx.beginPath();ctx.arc(0,-.46*u,.05*u,.1,Math.PI-.1);ctx.stroke();
+
+    // ทรงผมตามเพศ (หญิง: หางม้าผูกยางรัดชมพู / ชาย: หมวกแก๊ปดำ)
+    if(isGirl){
+      // ผมหน้าม้าสีน้ำตาลเข้ม
+      ctx.beginPath();
+      ctx.arc(0,-.56*u,.26*u,Math.PI*1.05,Math.PI*1.95);
+      ctx.lineTo(.18*u,-.62*u);ctx.lineTo(0,-.66*u);ctx.lineTo(-.18*u,-.62*u);
+      ctx.closePath();
+      ctx.fillStyle='#231f20';ctx.fill();ctx.lineWidth=w;ctx.stroke();
+
+      // หางม้าข้างมัดด้วยยางรัดผมสีชมพู (Pink hair tie & ponytail)
+      ctx.fillStyle='#f43f5e';circ(sd*.25*u,-.68*u,.06*u);
+      ctx.beginPath();
+      ctx.moveTo(sd*.25*u,-.68*u);
+      ctx.quadraticCurveTo(sd*.48*u,-.75*u,sd*.42*u,-.42*u);
+      ctx.quadraticCurveTo(sd*.32*u,-.55*u,sd*.24*u,-.64*u);
+      ctx.closePath();
+      ctx.fillStyle='#231f20';ctx.fill();ctx.stroke();
+    }else{
+      // หมวกแก๊ปสีดำหันไปข้างหลัง/ข้าง
+      ctx.beginPath();
+      ctx.arc(0,-.65*u,.26*u,Math.PI*0.9,Math.PI*2.1);
+      ctx.closePath();
+      ctx.fillStyle='#1e293b';ctx.fill();ctx.lineWidth=w*1.1;ctx.stroke();
+      // ปีกหมวกแก๊ป
+      ctx.beginPath();
+      ctx.ellipse(-sd*.1*u,-.58*u,.24*u,.07*u,sd*.2,0,7);
+      ctx.fillStyle='#0f172a';ctx.fill();ctx.stroke();
+    }
+
     ctx.restore();
   }
 
@@ -929,28 +996,168 @@ function drawObs(o,z){
   if(dbg)dbgBox(o,z);
 }
 
-/* ผู้ประสบภัยรอความช่วยเหลือ (Victim) */
+/* ผู้ประสบภัยรอความช่วยเหลือ (Victim: เด็กนักเรียนหญิง/ชาย ตะเกียกตะกายจมน้ำตามภาพ Reference) */
 function drawVic(v,z,t){
-  const p=P(v.x,z),u=p.s,w=lw(u),pl=.5+.5*Math.sin(t*6);if(p.d<1)return;
-  ctx.save();ctx.translate(p.x,p.y);ctx.lineCap='round';
-  // วงคลื่นน้ำกระเพื่อมระลอกเขียวช่วยชีวิต
-  ctx.fillStyle=`rgba(57,255,20,${.28+.2*pl})`;ell(0,0,(1.1+.15*pl)*u,.42*u);
-  ctx.strokeStyle='#39ff14';ctx.lineWidth=w;ctx.beginPath();ctx.ellipse(0,0,(1.1+.15*pl)*u,.42*u,0,0,7);ctx.stroke();
-  // คลื่นฟองน้ำรอบตัว
-  ctx.strokeStyle='rgba(255,255,255,.6)';ctx.lineWidth=1.5;ctx.beginPath();ctx.ellipse(0,0,.75*u,.25*u,0,0,7);ctx.stroke();
+  const p=P(v.x,z),u=p.s;if(p.d<1)return;
+  // ปรับขนาดเส้นขอบโมเดล (Stroke Width) ให้เล็กลง คมชัด ละเอียดสวยงามตามคำขอของผู้ใช้
+  // ลดขนาดเส้นลงอย่างประณีต คงสไตล์อาร์ตเดิมแต่เส้นบางคมชัด (Delicate & Clean Arcade Art Style)
+  const vw=Math.max(0.65,Math.min(1.8,u*0.015)),subVw=Math.max(0.45,Math.min(1.1,vw*0.62)),pl=.5+.5*Math.sin(t*6);
+  const isGirl=(v.gender==='girl');
+  // แอนิเมชันตะเกียกตะกายขึ้นลงในน้ำ (Struggling/bobbing animation on Y-axis)
+  const bobY=Math.sin(t*9+(v.ph||0))*.08*u;
+  const flail=Math.sin(t*15+(v.ph||0));
+  
+  ctx.save();
+  ctx.translate(p.x,p.y+bobY);
+  ctx.lineCap='round';ctx.lineJoin='round';
 
-  // แขนชูขอความช่วยเหลือพร้อมหยดน้ำสะบัด
-  const wv=Math.sin(t*9+v.ph)*.2*u;
-  for(const[c,k]of[[INK,2.3],['#39ff14',1]]){ctx.strokeStyle=c;ctx.lineWidth=.1*u*k;ctx.beginPath();ctx.moveTo(-.16*u,-.2*u);ctx.lineTo(-.45*u,-.75*u+wv);ctx.moveTo(.16*u,-.2*u);ctx.lineTo(.45*u,-.75*u-wv);ctx.stroke()}
-  // เสื้อชูชีพและศีรษะสไตล์จิบิ
-  E(0,-.28*u,.28*u,.22*u,'#39ff14',w);
-  E(-.2*u,-.52*u,.06*u,.07*u,'#ffb48e',w*.7);E(.2*u,-.52*u,.06*u,.07*u,'#ffb48e',w*.7);
-  E(0,-.5*u,.21*u,.2*u,'#ffb48e',w);
-  // ทรงผมจิบิ
-  ctx.beginPath();ctx.arc(0,-.52*u,.22*u,Math.PI,0);ctx.closePath();ctx.fillStyle='#232130';ctx.fill();ctx.lineWidth=w*.8;ctx.strokeStyle=INK;ctx.stroke();
+  // 1. วงคลื่นน้ำกระเพื่อมระลอกเขียวช่วยชีวิต (Rescue Aura Ripple)
+  ctx.fillStyle=`rgba(57,255,20,${.22+.18*pl})`;ell(0,0,(1.15+.15*pl)*u,.44*u);
+  ctx.strokeStyle='#39ff14';ctx.lineWidth=Math.max(0.8,vw*0.85);ctx.beginPath();ctx.ellipse(0,0,(1.15+.15*pl)*u,.44*u,0,0,7);ctx.stroke();
 
-  const by=-1.25*u-Math.abs(Math.sin(t*5))*.15*u;TRI([[-.28*u,by-.4*u],[.28*u,by-.4*u],[0,by]],'#39ff14',w);
-  if(u>14){ctx.font=`700 ${Math.max(13,.3*u)}px Mali,sans-serif`;ctx.textAlign='center';ctx.lineWidth=5;ctx.strokeStyle=INK;ctx.strokeText('ช่วยด้วย!',0,by-.55*u);ctx.fillStyle='#fff';ctx.fillText('ช่วยด้วย!',0,by-.55*u)}
+  // วงคลื่นฟองน้ำสีขาวระลอกกลาง
+  ctx.strokeStyle='rgba(255,255,255,.75)';ctx.lineWidth=Math.max(0.6,subVw);
+  ctx.beginPath();ctx.ellipse(0,0,.8*u,.28*u,0,0,7);ctx.stroke();
+
+  // 2. หยาดน้ำกระเซ็นและละอองน้ำรอบตัว (Water Splash Droplets)
+  const drops=[
+    [-.52*u,-.88*u+flail*.04*u],[-.64*u,-.68*u-flail*.04*u],
+    [.52*u,-.88*u-flail*.04*u],[.64*u,-.68*u+flail*.04*u],
+    [-.28*u,-1.05*u],[.28*u,-1.05*u]
+  ];
+  ctx.fillStyle='#38bdf8';ctx.strokeStyle='rgba(20,18,38,.4)';ctx.lineWidth=Math.max(0.4,subVw*0.7);
+  for(const[dx,dy]of drops){
+    ctx.beginPath();ctx.ellipse(dx,dy,.05*u,.08*u,.3,0,7);ctx.fill();ctx.stroke();
+  }
+
+  // 3. ท่อนล่างและลำตัว (เสื้อนักเรียนสีขาว + กระโปรง/กางเกง)
+  if(isGirl){
+    // กระโปรงนักเรียนหญิงสีดำ (Black pleated skirt)
+    RR(-.26*u,-.12*u,.52*u,.16*u,.04*u,'#1e293b',vw);
+  }else{
+    // กางเกงขาสั้นนักเรียนชายสีดำ (Black school shorts)
+    RR(-.22*u,-.12*u,.44*u,.16*u,.04*u,'#1e293b',vw);
+  }
+  // เสื้อเชิ้ต/เสื้อยืดนักเรียนสีขาว (White shirt)
+  RR(-.22*u,-.36*u,.44*u,.32*u,.08*u,'#ffffff',vw);
+
+  // 4. แขนชูตะเกียกตะกาย 2 ข้างพร้อมนิ้วมือกางขอความช่วยเหลือ (Flailing spread-finger hands)
+  const leftHandY=-.68*u+flail*.08*u;
+  const rightHandY=-.68*u-flail*.08*u;
+
+  // แขนเสื้อขาวและแขนซ้าย
+  ctx.strokeStyle='#ffffff';ctx.lineWidth=.065*u;
+  ctx.beginPath();ctx.moveTo(-.14*u,-.28*u);ctx.lineTo(-.32*u,leftHandY+.12*u);ctx.stroke();
+  ctx.strokeStyle=INK;ctx.lineWidth=subVw;
+  ctx.beginPath();ctx.moveTo(-.16*u,-.26*u);ctx.lineTo(-.34*u,leftHandY+.1*u);ctx.stroke();
+
+  // แขนเสื้อขาวและแขนขวา
+  ctx.strokeStyle='#ffffff';ctx.lineWidth=.065*u;
+  ctx.beginPath();ctx.moveTo(.14*u,-.28*u);ctx.lineTo(.32*u,rightHandY+.12*u);ctx.stroke();
+  ctx.strokeStyle=INK;ctx.lineWidth=subVw;
+  ctx.beginPath();ctx.moveTo(.16*u,-.26*u);ctx.lineTo(.34*u,rightHandY+.1*u);ctx.stroke();
+
+  // ฝ่ามือกางนิ้ว 4 แฉกข้างซ้าย (Left spread hand - เส้นคมชัด เรียวเล็ก ไม่ทับเป็นก้อน)
+  ctx.save();ctx.translate(-.36*u,leftHandY);
+  ctx.beginPath();
+  ctx.arc(0,0,.08*u,0,7);
+  ctx.fillStyle='#ffb48e';ctx.fill();
+  ctx.lineWidth=subVw;ctx.strokeStyle=INK;ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-.06*u,-.03*u);ctx.lineTo(-.12*u,-.15*u);
+  ctx.moveTo(-.01*u,-.06*u);ctx.lineTo(-.03*u,-.18*u);
+  ctx.moveTo(.04*u,-.05*u);ctx.lineTo(.07*u,-.17*u);
+  ctx.moveTo(.08*u,-.01*u);ctx.lineTo(.13*u,-.11*u);
+  ctx.lineWidth=Math.max(0.4,subVw*0.8);ctx.strokeStyle=INK;ctx.stroke();
+  ctx.restore();
+
+  // ฝ่ามือกางนิ้ว 4 แฉกข้างขวา (Right spread hand - เส้นคมชัด เรียวเล็ก ไม่ทับเป็นก้อน)
+  ctx.save();ctx.translate(.36*u,rightHandY);
+  ctx.beginPath();
+  ctx.arc(0,0,.08*u,0,7);
+  ctx.fillStyle='#ffb48e';ctx.fill();
+  ctx.lineWidth=subVw;ctx.strokeStyle=INK;ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-.08*u,-.01*u);ctx.lineTo(-.13*u,-.11*u);
+  ctx.moveTo(-.04*u,-.05*u);ctx.lineTo(-.07*u,-.17*u);
+  ctx.moveTo(.01*u,-.06*u);ctx.lineTo(.03*u,-.18*u);
+  ctx.moveTo(.06*u,-.03*u);ctx.lineTo(.12*u,-.15*u);
+  ctx.lineWidth=Math.max(0.4,subVw*0.8);ctx.strokeStyle=INK;ctx.stroke();
+  ctx.restore();
+
+  // 5. ใบหน้าสไตล์จิบิตกใจร้องขอความช่วยเหลือ (Chibi Distressed Face)
+  E(0,-.56*u,.28*u,.25*u,'#ffb48e',vw);
+  // หูสองข้าง
+  E(-.3*u,-.56*u,.07*u,.08*u,'#ffb48e',subVw);
+  E(.3*u,-.56*u,.07*u,.08*u,'#ffb48e',subVw);
+
+  // ตาโตสีดำตื่นตกใจ
+  E(-.12*u,-.58*u,.05*u,.068*u,'#141226',0);
+  E(.12*u,-.58*u,.05*u,.068*u,'#141226',0);
+  // ประกายตาขาว
+  circ(-.13*u,-.6*u,.018*u);circ(.11*u,-.6*u,.018*u);
+
+  // ปากอ้ากว้างร้องตะโกนขอความช่วยเหลือ (Open Crying/Shouting Mouth)
+  ctx.beginPath();
+  ctx.ellipse(0,-.44*u,.13*u,.095*u,0,0,7);
+  ctx.fillStyle='#7f1d1d';ctx.fill();
+  ctx.lineWidth=subVw;ctx.strokeStyle=INK;ctx.stroke();
+  // ลิ้นสีชมพูคอรัลสดใส
+  ctx.beginPath();
+  ctx.arc(0,-.42*u,.08*u,0,Math.PI);
+  ctx.fillStyle='#f87171';ctx.fill();
+
+  // 6. ทรงผมและหมวกตามเพศ (Hair / Cap Variation)
+  if(isGirl){
+    // ทรงผมนักเรียนหญิง: ผมหน้าม้าดกดำปรกหน้าผาก
+    ctx.beginPath();
+    ctx.arc(0,-.64*u,.29*u,Math.PI*0.9,Math.PI*2.1);
+    ctx.bezierCurveTo(.22*u,-.62*u,.12*u,-.7*u,0,-.65*u);
+    ctx.bezierCurveTo(-.12*u,-.7*u,-.22*u,-.62*u,-.29*u,-.64*u);
+    ctx.closePath();
+    ctx.fillStyle='#231f20';ctx.fill();
+    ctx.lineWidth=vw;ctx.strokeStyle=INK;ctx.stroke();
+
+    // หางม้าผูกข้างขวาพร้อมยางรัดผมสีชมพู (Side Ponytail with pink hair tie)
+    ctx.save();ctx.translate(.28*u,-.78*u);ctx.rotate(flail*.2);
+    ctx.fillStyle='#f43f5e';circ(0,0,.065*u); // ยางรัดผมชมพู
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.bezierCurveTo(.25*u,-.1*u,.4*u,.2*u,.22*u,.45*u);
+    ctx.bezierCurveTo(.12*u,.32*u,.05*u,.12*u,-.02*u,.05*u);
+    ctx.closePath();
+    ctx.fillStyle='#231f20';ctx.fill();
+    ctx.lineWidth=subVw;ctx.strokeStyle=INK;ctx.stroke();
+    ctx.restore();
+  }else{
+    // ทรงผมนักเรียนชาย: หมวกแก๊ปสีดำหันไปข้างหน้า
+    ctx.beginPath();
+    ctx.arc(0,-.7*u,.29*u,Math.PI*0.85,Math.PI*2.15);
+    ctx.closePath();
+    ctx.fillStyle='#1e293b';ctx.fill();
+    ctx.lineWidth=vw;ctx.strokeStyle=INK;ctx.stroke();
+
+    // ปีกหมวกด้านหน้า (Curved Cap Visor)
+    ctx.beginPath();
+    ctx.ellipse(0,-.68*u,.32*u,.085*u,0,0,Math.PI);
+    ctx.fillStyle='#0f172a';ctx.fill();
+    ctx.lineWidth=subVw;ctx.strokeStyle=INK;ctx.stroke();
+
+    // ปอยผมดำข้างใบหู
+    ctx.fillStyle='#231f20';
+    circ(-.25*u,-.62*u,.05*u);circ(.25*u,-.62*u,.05*u);
+  }
+
+  // 7. ป้ายข้อความ "ช่วยด้วย!" และลูกศรชี้ลอยอยู่เหนือหัว
+  const by=-1.35*u-Math.abs(Math.sin(t*5))*.15*u;
+  TRI([[-.26*u,by-.36*u],[.26*u,by-.36*u],[0,by]],'#39ff14',Math.max(0.8,vw*0.85));
+  if(u>14){
+    ctx.font=`700 ${Math.max(12,.28*u)}px Mali,sans-serif`;
+    ctx.textAlign='center';ctx.lineWidth=Math.max(1.5,Math.min(3,u*0.03));
+    ctx.strokeStyle=INK;ctx.strokeText('ช่วยด้วย!',0,by-.55*u);
+    ctx.fillStyle='#fff';ctx.fillText('ช่วยด้วย!',0,by-.55*u);
+  }
+
   ctx.restore();
   if(dbg)dbgCircle(v.x,z,RESCUE.radius,'#7dff9a');
 }
@@ -1800,62 +2007,61 @@ function drawBtsOverpass(bz,t){
   fq(-spanW,spanW,bz,beamY0,beamY0+.14,'#7a8390');
   fq(-spanW,spanW,bz,beamY1-.14,beamY1,'#c5cfdc');
   
-  // 4. แผ่นป้ายและข้อความ "กรุงเทพ…ชีวิตดีๆที่ลงตัว" บนคานรถไฟฟ้า (Faux-3D Perspective Scaling & Responsive iPad Centering)
+  // 4. แผ่นป้ายและข้อความ "กรุงเทพ…ชีวิตดีๆที่ลงตัว" บนคานรถไฟฟ้า (Realistic 3D Perspective Scaling & Universal Centering)
   const banY0=beamY0+.2,banY1=beamY1-.2,banYMid=(banY0+banY1)/2;
   const qMid=P(0,bz,banYMid); // จุดกึ่งกลาง 3D Projection ของสะพานและราง ณ ระยะ bz
   
   if(qMid.s>1.8){
     const textStr='กรุงเทพ…ชีวิตดีๆที่ลงตัว';
-    // ปรับขนาดฟอนต์ตามระยะทางและความลึก 3D (Z-depth perspective scaling) ขยายใหญ่ขึ้นเมื่อเข้าใกล้กล้อง
-    const fontSize=Math.max(3,0.44*qMid.s);
-    ctx.font=`700 ${fontSize}px Mali,sans-serif`;
-    ctx.textAlign='center';
-    ctx.textBaseline='middle';
-
-    // คำนวณความกว้างของข้อความจริงด้วย ctx.measureText()
-    const metrics=ctx.measureText(textStr);
-    const textW=metrics.width||(fontSize*10);
-    const padX=Math.max(4,0.28*qMid.s);
-    const boxW=textW+padX*2;
-    const boxH=Math.max(fontSize*1.35,(beamY1-beamY0)*0.65*qMid.s);
-
-    // ตำแหน่งจัดกึ่งกลางร่วมกันสำหรับทั้งกล่อง (fillRect) และตัวหนังสือ (fillText)
-    // คำนวณจาก qMid.x ซึ่งสะท้อนแกน 3D กลางราง ไม่เลื่อนเบ้ขวาบนจอ iPad หรือทุกสัดส่วนจอ
+    // จุดกึ่งกลางร่วมกันสำหรับทั้งกล่อง (fillRect) และตัวหนังสือ (fillText) ในระบบพิกัด 3D Projection
     const centerX=qMid.x;
     const centerY=qMid.y;
+
+    // คำนวณขนาดฟอนต์ตามระยะ 3D Perspective จริง (ขยายใหญ่ขึ้นอย่างสมจริงตามระยะที่เข้าใกล้ ไม่มีการลดขนาดหรือฝืนสเกล)
+    const fontSize=Math.max(7,Math.round(0.42*qMid.s));
+    ctx.font=`700 ${fontSize}px 'Mali','Noto Sans Thai','Sukhumvit Set','Thonburi',sans-serif`;
+    ctx.textAlign='left';
+    ctx.textBaseline='middle';
+
+    const textW=ctx.measureText(textStr).width;
+    const padX=Math.max(6,Math.round(0.30*qMid.s));
+    const boxW=textW+padX*2;
+    const boxH=Math.max(fontSize*1.35,(beamY1-beamY0)*0.65*qMid.s);
     const rectX=centerX-boxW*0.5;
     const rectY=centerY-boxH*0.5;
 
-    // วาดพื้นหลังกล่องสีน้ำเงิน (fillRect) ขนาดพอดีรอบข้อความเท่านั้น
+    // 1. วาดพื้นหลังกล่องสีน้ำเงิน (fillRect) กึ่งกลางอยู่ที่ centerX อย่างสมบูรณ์แบบ
     ctx.fillStyle='#0b5ca8';
     ctx.fillRect(rectX,rectY,boxW,boxH);
 
-    // เส้นขอบสีน้ำเงินเข้มรอบกล่อง
+    // 2. เส้นขอบสีน้ำเงินเข้มรอบกล่อง
     ctx.strokeStyle='#00254d';
     ctx.lineWidth=Math.max(1,0.04*qMid.s);
     ctx.strokeRect(rectX,rectY,boxW,boxH);
     
-    // ขลิบแถบเส้นสีขาวบน-ล่างของแผ่นป้าย
+    // 3. ขลิบแถบเส้นสีขาวบน-ล่างของแผ่นป้าย
     const stripeH=Math.max(1,0.035*qMid.s);
     ctx.fillStyle='#ffffff';
     ctx.fillRect(rectX,rectY,boxW,stripeH);
     ctx.fillRect(rectX,rectY+boxH-stripeH,boxW,stripeH);
 
-    // จุดไฟประดับสีขาวหัว-ท้ายป้ายเมื่อเข้ามาใกล้พอ
+    // 4. จุดไฟประดับสีขาวหัว-ท้ายป้ายเมื่อเข้ามาใกล้พอ (สมมาตรซ้าย-ขวาเท่ากันเป๊ะที่ระยะ padX*0.45 จากขอบ)
     if(qMid.s>6){
       ctx.fillStyle='#ffffff';
       circ(rectX+padX*0.45,centerY,Math.max(1.2,qMid.s*0.035));
       circ(rectX+boxW-padX*0.45,centerY,Math.max(1.2,qMid.s*0.035));
     }
 
-    // วาดตัวหนังสือสีขาว ขอบเงาสีน้ำเงินเข้ม คมชัดและอยู่กึ่งกลางกล่องพอดี 100%
-    ctx.textAlign='center';
-    ctx.textBaseline='middle';
+    // 5. วาดตัวหนังสือสีขาว ขอบเงาสีน้ำเงินเข้ม
+    // ใช้ textAlign = 'left' โดยกำหนดจุดเริ่มต้น X = rectX + padX
+    // วิธีนี้ทำให้ข้อความเริ่มต้นที่ระยะ padX จากขอบซ้ายเสมอ และสิ้นสุดที่ระยะ padX จากขอบขวาเสมอ (boxW = textW + padX*2)
+    // ขจัดบั๊กการคำนวณ Center Alignment ของ WebKit CoreText บน iPad/Safari ได้ 100% บนทุกแพลตฟอร์ม
+    const textX=rectX+padX;
     ctx.lineWidth=Math.max(1.2,fontSize*0.14);
     ctx.strokeStyle='#00254d';
-    ctx.strokeText(textStr,centerX,centerY);
+    ctx.strokeText(textStr,textX,centerY);
     ctx.fillStyle='#ffffff';
-    ctx.fillText(textStr,centerX,centerY);
+    ctx.fillText(textStr,textX,centerY);
   }
   
   // 5. ราวกั้นคอนกรีตบนสะพาน
