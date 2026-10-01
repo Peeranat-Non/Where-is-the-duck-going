@@ -17,11 +17,17 @@
     <div><span class="big" id="hs">0</span><small id="hd">0 ม.</small><small id="hz"></small><span id="ht-badge" class="test-badge" hidden>🛡️ โหมดทดสอบ</span></div>
     <div class="r"><span class="big" id="hc"></span><small id="hr">ช่วยแล้ว 0 คน</small></div>
   </div>
-  <div id="tools">
-    <button id="bp">หยุด</button>
-    <button id="br">เริ่มใหม่</button>
-    <button id="bd">Hitbox: ปิด</button>
-    <button id="bt">โหมดทดสอบ: ปิด</button>
+  <button id="btn-settings" class="btn-settings" hidden>⚙️ ตั้งค่า</button>
+  <div id="settings-menu" class="settings-modal" hidden>
+    <div class="card settings-card">
+      <h2>⚙️ ตั้งค่าเกม</h2>
+      <button class="mb" id="sm-resume">▶ เล่นต่อ</button>
+      <button class="mb" id="sm-restart">🔄 เริ่มเกมใหม่</button>
+      <button class="mb" id="sm-sound">🔊 เปิด/ปิดเสียง: เปิด</button>
+      <button class="mb" id="sm-hitbox">🎯 เปิด/ปิดฮิตบ็อกซ์: ปิด</button>
+      <button class="mb" id="sm-test">🛡️ โหมดทดสอบ: ปิด ⚪</button>
+      <button class="mb" id="sm-menu">🏠 กลับหน้าหลัก</button>
+    </div>
   </div>
   <div id="cd" hidden>
     <div id="cdn" class="cdn-text">3</div>

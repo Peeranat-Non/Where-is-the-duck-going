@@ -63,12 +63,68 @@ canvas{
   text-align:right;
 }
 
+/* Settings Button (Bottom Right) */
+#btn-settings{
+  position:fixed;
+  right:14px;
+  bottom:14px;
+  z-index:25;
+  padding:10px 18px;
+  font-size:15px;
+  background:rgba(5,40,50,.85);
+  color:var(--ink);
+  border:2px solid var(--duck);
+  border-radius:14px;
+  box-shadow:0 4px 0 #1a1240;
+}
+#btn-settings[hidden]{
+  display:none;
+}
+#btn-settings:active{
+  transform:translateY(2px);
+  box-shadow:0 2px 0 #1a1240;
+}
+
+/* Settings Menu Modal */
+#settings-menu{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(4,30,40,.65);
+  padding:16px;
+  z-index:35;
+}
+#settings-menu[hidden]{
+  display:none;
+}
+.settings-card{
+  width:min(340px,90vw);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:10px;
+}
+.settings-card h2{
+  margin:0 0 6px;
+  font-size:24px;
+  color:var(--duck);
+  text-shadow:0 2px 0 #1a1240;
+}
+.settings-card .mb{
+  width:100%;
+  font-size:16px;
+  padding:10px 14px;
+}
+
 #tools{
   position:absolute;
   right:10px;
   bottom:10px;
   display:flex;
   gap:8px;
+  z-index:10;
 }
 
 button{
@@ -109,6 +165,7 @@ button:focus-visible,input:focus-visible{
   justify-content:center;
   background:rgba(4,30,40,.55);
   padding:16px;
+  z-index:35;
 }
 
 #ov[hidden],#tune[hidden]{
@@ -174,6 +231,7 @@ button:focus-visible,input:focus-visible{
   gap:10px;
   padding:16px;
   background:linear-gradient(rgba(4,30,60,.3),rgba(4,30,40,.72));
+  z-index:30;
 }
 
 #mm[hidden]{
