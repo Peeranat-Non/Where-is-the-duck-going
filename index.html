@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Where is the duck going? (เป็ดไปไหนวะ)</title>
+<title>Where is the duck going?</title>
 <meta name="description" content="เป็ดไปไหนวะ - พาเป็ดหลบสิ่งกีดขวางกลางถนนน้ำท่วมกรุงเทพฯ สะบัดเชือกห่วงยางช่วยคน">
-<meta property="og:title" content="Where is the duck going? (เป็ดไปไหนวะ)">
+<meta property="og:title" content="Where is the duck going?">
 <meta property="og:description" content="เป็ดไปไหนวะ - พาเป็ดหลบสิ่งกีดขวางกลางถนนน้ำท่วมกรุงเทพฯ สะบัดเชือกห่วงยางช่วยคน">
 <link href="https://fonts.googleapis.com/css2?family=Mali:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
@@ -19,19 +19,39 @@
   </div>
   <button id="btn-skin" class="btn-skin" hidden>👕 สกิน</button>
   <button id="btn-settings" class="btn-settings" hidden>⚙️ ตั้งค่า</button>
-  <div id="settings-menu" class="settings-modal" hidden>
+  <!-- Modal 1: ตั้งค่าหน้าเมนูหลัก (Main Menu Settings Modal) -->
+  <div id="main-menu-settings" class="settings-modal" hidden>
     <div class="card settings-card">
+      <button id="close-mm-settings-btn" class="close-modal-btn" aria-label="ปิด">&times;</button>
+      <h2>⚙️ ตั้งค่า</h2>
+      <div class="audio-controls-row">
+        <button class="mb" id="mms-sfx">🔊 เอฟเฟค: เปิด</button>
+        <button class="mb" id="mms-bgm">🎵 เพลง: เปิด</button>
+      </div>
+      <button class="mb" id="mms-test">🛡️ โหมดทดสอบ: ปิด ⚪</button>
+      <button class="mb" id="mms-hitbox">🎯 เปิด/ปิดฮิตบ็อกซ์: ปิด</button>
+    </div>
+  </div>
+
+  <!-- Modal 2: ตั้งค่าระหว่างเล่นเกม (In-Game Settings Modal) -->
+  <div id="in-game-settings" class="settings-modal" hidden>
+    <div class="card settings-card">
+      <button id="close-ig-settings-btn" class="close-modal-btn" aria-label="ปิด">&times;</button>
       <h2>⚙️ ตั้งค่าเกม</h2>
-      <button class="mb" id="sm-resume">▶ เล่นต่อ</button>
-      <button class="mb" id="sm-restart">🔄 เริ่มเกมใหม่</button>
-      <button class="mb" id="sm-sound">🔊 เปิด/ปิดเสียง: เปิด</button>
-      <button class="mb" id="sm-hitbox">🎯 เปิด/ปิดฮิตบ็อกซ์: ปิด</button>
-      <button class="mb" id="sm-test">🛡️ โหมดทดสอบ: ปิด ⚪</button>
-      <button class="mb" id="sm-menu">🏠 กลับหน้าหลัก</button>
+      <button class="mb btn-continue" id="igs-resume">▶ เล่นต่อ</button>
+      <button class="mb" id="igs-restart">🔄 เริ่มเกมใหม่</button>
+      <div class="audio-controls-row">
+        <button class="mb" id="igs-sfx">🔊 เอฟเฟค: เปิด</button>
+        <button class="mb" id="igs-bgm">🎵 เพลง: เปิด</button>
+      </div>
+      <button class="mb" id="igs-test">🛡️ โหมดทดสอบ: ปิด ⚪</button>
+      <button class="mb" id="igs-hitbox">🎯 เปิด/ปิดฮิตบ็อกซ์: ปิด</button>
+      <button class="mb" id="igs-menu">🏠 กลับหน้าหลัก</button>
     </div>
   </div>
   <div id="skin-modal" class="settings-modal" hidden>
     <div class="card skin-card">
+      <button id="close-skin-btn" aria-label="ปิด">&times;</button>
       <div class="skin-carousel">
         <button class="skin-arrow" id="skin-prev" aria-label="สกินก่อนหน้า">◀</button>
         <div class="skin-preview-wrap">
@@ -55,6 +75,8 @@
     </div>
   </div>
   <div id="mm">
+    <button id="mm-settings-btn" class="mm-corner-btn mm-corner-tl" aria-label="ตั้งค่า">⚙️ ตั้งค่า</button>
+    <button id="mh" class="mm-corner-btn mm-corner-tr" aria-label="วิธีเล่น">❓ วิธีเล่น</button>
     <div class="ttl">
       <div class="fl"><i class="tf"></i><span>🌊</span><i class="tf"></i></div>
       <h1>เป็ดไปไหนวะ</h1>
@@ -64,10 +86,7 @@
     </div>
     <div class="best-badge" id="mm-best">🏆 สถิติสูงสุด: <span id="mm-best-val">0</span> คะแนน</div>
     <button class="mb" id="ms">▶ เริ่มเกม</button>
-    <button class="mb" id="mso">เสียง: เปิด 🔊</button>
-    <button class="mb" id="mt">🛡️ โหมดทดสอบ: ปิด ⚪</button>
-    <button class="mb" id="mr" disabled>⏵ เล่นต่อ</button>
-    <button class="mb" id="mh">วิธีเล่น</button>
+    <button class="mb btn-continue" id="mr" disabled>⏵ เล่นต่อ</button>
     <div class="card how-to-play-card" id="hw" hidden>
       <h1>🌊 วิธีการเล่น</h1>
       <div class="how-to-scroll">

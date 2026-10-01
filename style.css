@@ -24,13 +24,23 @@ html,body{
   position:relative;
   width:100%;
   height:100%;
+  max-width:100vw;
+  max-height:100vh;
+  margin:0 auto;
+  overflow:hidden;
+  display:flex;
+  justify-content:center;
+  align-items:center;
 }
 
-canvas{
+#c, #game-canvas{
   position:absolute;
   inset:0;
   width:100%;
   height:100%;
+  max-width:100vw;
+  max-height:100vh;
+  object-fit:contain;
   display:block;
   touch-action:none;
 }
@@ -100,26 +110,75 @@ canvas{
   box-shadow:0 2px 0 #1a1240;
 }
 
-/* Settings Menu Modal */
-#settings-menu{
-  position:absolute;
+/* Settings Modals Overlay (Fixed and strictly highest z-index) */
+.settings-modal,
+.settings-modal-overlay,
+#settings-menu,
+#main-menu-settings,
+#in-game-settings{
+  position:fixed;
   inset:0;
   display:flex;
   align-items:center;
   justify-content:center;
-  background:rgba(4,30,40,.65);
+  background:rgba(4,30,40,.75);
   padding:16px;
-  z-index:35;
+  z-index:9999;
 }
-#settings-menu[hidden]{
-  display:none;
+.settings-modal[hidden],
+.settings-modal-overlay[hidden],
+#settings-menu[hidden],
+#main-menu-settings[hidden],
+#in-game-settings[hidden]{
+  display:none !important;
 }
 .settings-card{
+  position:relative;
   width:min(340px,90vw);
   display:flex;
   flex-direction:column;
   align-items:center;
   gap:10px;
+  padding:24px 20px 20px;
+}
+#close-settings-btn,
+#close-mm-settings-btn,
+#close-ig-settings-btn,
+.close-modal-btn{
+  position:absolute;
+  top:10px;
+  right:12px;
+  width:32px;
+  height:32px;
+  border-radius:50%;
+  border:2px solid var(--duck);
+  background:rgba(5,40,50,.85);
+  color:var(--duck);
+  font-size:22px;
+  font-weight:700;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  box-shadow:0 2px 0 #1a1240;
+  transition:all .15s ease;
+  padding:0;
+  z-index:10;
+}
+#close-settings-btn:hover,
+#close-mm-settings-btn:hover,
+#close-ig-settings-btn:hover,
+.close-modal-btn:hover{
+  background:var(--duck);
+  color:#1a1240;
+}
+#close-settings-btn:active,
+#close-mm-settings-btn:active,
+#close-ig-settings-btn:active,
+.close-modal-btn:active{
+  transform:translateY(1px);
+  box-shadow:0 1px 0 #1a1240;
 }
 .settings-card h2{
   margin:0 0 6px;
@@ -131,6 +190,21 @@ canvas{
   width:100%;
   font-size:16px;
   padding:10px 14px;
+}
+
+/* แถวปุ่มปรับเสียงเอฟเฟกต์และเพลงคู่กัน */
+.audio-controls-row{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  width:100%;
+}
+.audio-controls-row .mb{
+  flex:1;
+  min-width:0;
+  padding:10px 6px;
+  font-size:14px;
+  white-space:nowrap;
 }
 
 /* Minimalist Skin Selection Modal */
@@ -148,12 +222,43 @@ canvas{
   display:none !important;
 }
 .skin-card{
+  position:relative;
   width:min(320px,90vw);
   display:flex;
   flex-direction:column;
   align-items:center;
   gap:16px;
-  padding:22px 18px;
+  padding:26px 18px 20px;
+}
+#close-skin-btn{
+  position:absolute;
+  top:10px;
+  right:12px;
+  width:32px;
+  height:32px;
+  border-radius:50%;
+  border:2px solid var(--duck);
+  background:rgba(5,40,50,.85);
+  color:var(--duck);
+  font-size:22px;
+  font-weight:700;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  box-shadow:0 2px 0 #1a1240;
+  transition:all .15s ease;
+  padding:0;
+  z-index:10;
+}
+#close-skin-btn:hover{
+  background:var(--duck);
+  color:#1a1240;
+}
+#close-skin-btn:active{
+  transform:translateY(1px);
+  box-shadow:0 1px 0 #1a1240;
 }
 .skin-carousel{
   display:flex;
@@ -213,6 +318,15 @@ canvas{
   background:#16a34a;
   color:#fff;
   box-shadow:0 4px 0 #14532d;
+}
+#skin-action-btn:disabled, #skin-select-btn:disabled{
+  background-color:#64748b !important;
+  color:#cbd5e1 !important;
+  border-color:#94a3b8 !important;
+  box-shadow:0 4px 0 #334155 !important;
+  cursor:not-allowed !important;
+  opacity:0.75;
+  transform:none !important;
 }
 
 /* Best Score Badge on Main Menu */
@@ -395,14 +509,113 @@ button:focus-visible,input:focus-visible{
 #mm{
   position:absolute;
   inset:0;
+  width:100vw;
+  height:100vh;
+  max-width:100%;
+  max-height:100%;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  gap:10px;
+  padding:16px;
+  box-sizing:border-box;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  background:linear-gradient(rgba(4,30,60,.3),rgba(4,30,40,.72));
+  z-index:30;
+}
+
+/* ปุ่มมุมจอหน้าเมนูหลัก (Main Menu Corner Buttons) */
+.mm-corner-btn{
+  position:absolute;
+  top:16px;
+  padding:8px 14px;
+  font-size:14px;
+  font-weight:700;
+  border-radius:12px;
+  border:2px solid var(--duck);
+  background:rgba(5,40,50,.85);
+  color:var(--duck);
+  cursor:pointer;
+  box-shadow:0 3px 0 #1a1240;
+  transition:all .15s ease;
+  z-index:35;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.mm-corner-btn:hover{
+  background:var(--duck);
+  color:#1a1240;
+  transform:translateY(-1px);
+}
+.mm-corner-btn:active{
+  transform:translateY(1px);
+  box-shadow:0 1px 0 #1a1240;
+}
+.mm-corner-tl{
+  left:16px;
+}
+.mm-corner-tr{
+  right:16px;
+}
+
+/* ปุ่มเล่นต่อเมื่อมีเกมกำลังเล่นค้างอยู่ (Dynamic Active Continue Button) */
+.btn-continue-active {
+  background-color: #4CAF50 !important;
+  color: white !important;
+  border-color: #81C784 !important;
+  box-shadow: 0 4px 0 #2E7D32 !important;
+  cursor: pointer !important;
+  opacity: 1 !important;
+}
+.btn-continue-active:hover {
+  background-color: #43A047 !important;
+  transform: translateY(-1px);
+}
+.btn-continue-active:active {
+  transform: translateY(2px) !important;
+  box-shadow: 0 1px 0 #2E7D32 !important;
+}
+
+/* Game Over 4-Stats Grid */
+.go-stats-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin:14px 0 18px;
+  width:100%;
+}
+.go-stat-card{
+  background:rgba(5,30,42,.75);
+  border:2px solid rgba(255,207,46,.4);
+  border-radius:14px;
+  padding:10px 8px;
   display:flex;
   flex-direction:column;
   align-items:center;
   justify-content:center;
-  gap:10px;
-  padding:16px;
-  background:linear-gradient(rgba(4,30,60,.3),rgba(4,30,40,.72));
-  z-index:30;
+  gap:4px;
+}
+.go-stat-card.best{
+  border-color:var(--duck);
+  background:rgba(14,74,93,.85);
+}
+.go-stat-label{
+  font-size:13px;
+  color:#a5f3fc;
+  font-weight:500;
+  opacity:.9;
+}
+.go-stat-val{
+  font-size:20px;
+  font-weight:700;
+  color:#ffffff;
+  line-height:1.2;
+}
+.go-stat-card.best .go-stat-val{
+  color:var(--duck);
 }
 
 #mm[hidden]{

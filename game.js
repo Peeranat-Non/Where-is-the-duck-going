@@ -18,13 +18,17 @@ const JUMP={v0:9.5,g:26};
 const RESCUE={radius:.5};
 const VIC_MSGS=['ช่วยด้วย','รวยไม่ไหวแล้ว!'];
 const LANE=[-3.3,0,3.3],OBSTACLE_X=[-2.5,0,2.5],CAM={z:8,y:2.4},BANK=4.4,SPEEDBOAT_RZ=22;
-let S,camX=0,dbg=false,testMode=false,highScore=0,best=0;
+let S,camX=0,dbg=false,testMode=false,highScore=0,best=0,bestRescues=0;
 let currentSkin='duck';
 
 try{
   highScore=+localStorage.getItem('highScore')||+localStorage.getItem('duckBest')||0;
   best=highScore;
+  bestRescues=+localStorage.getItem('highRescues')||+localStorage.getItem('bestRescues')||0;
   currentSkin=localStorage.getItem('currentSkin')||'duck';
+  if(currentSkin==='shark' && highScore < 40000) currentSkin='duck';
+  if(currentSkin==='unicorn' && bestRescues < 300) currentSkin='duck';
+  if(currentSkin==='dog_moto' && highScore < 130000) currentSkin='duck';
 }catch(e){}
 
 function updateHighScoreUI(){
@@ -82,7 +86,7 @@ class SoundManager{
     if(this.ctx&&this.ctx.state==='suspended')this.ctx.resume();
   }
   play(k){
-    if(!this.enabled||!snd)return;
+    if(!this.enabled||!isSfxEnabled||!snd)return;
     this.init();
     const a=this.pool[k];
     if(a&&a.src){
@@ -223,7 +227,8 @@ class Input{
         if(e.code==='Enter'||e.code==='Space'){e.preventDefault();applyViewedSkin();return}
         if(e.code==='KeyP'||e.code==='Escape'){e.preventDefault();closeSkinModal();if(S.state==='PAUSED')resume();return}
       }
-      const mv=!$('#mm').hidden;if(mv||!$('#ov').hidden||($('#settings-menu')&&!$('#settings-menu').hidden)){if(e.code==='KeyP'||e.code==='Escape'){e.preventDefault();if($('#settings-menu')&&!$('#settings-menu').hidden){closeSettings();resume();return}if(S.state==='PAUSED'){resume();return}}if(e.code==='Enter'||e.code==='Space'){e.preventDefault();if($('#settings-menu')&&!$('#settings-menu').hidden)return;$(mv?(S.state==='PAUSED'?'#mr':'#ms'):'#go').click()}return}
+      const isSettingsOpen = ($('#main-menu-settings')&&!$('#main-menu-settings').hidden)||($('#in-game-settings')&&!$('#in-game-settings').hidden)||($('#settings-menu')&&!$('#settings-menu').hidden);
+      const mv=!$('#mm').hidden;if(mv||!$('#ov').hidden||isSettingsOpen){if(e.code==='KeyP'||e.code==='Escape'){e.preventDefault();if(isSettingsOpen){closeSettings();if(S.state==='PAUSED'&&$('#mm').hidden)resume();return}if(S.state==='PAUSED'){resume();return}}if(e.code==='Enter'||e.code==='Space'){e.preventDefault();if(isSettingsOpen)return;$(mv?(S.state==='PAUSED'?'#mr':'#ms'):'#go').click()}return}
       if(e.repeat)return;
       if(e.code==='ArrowLeft'||e.code==='KeyA')this.push(-1);
       if(e.code==='ArrowRight'||e.code==='KeyD')this.push(1);
@@ -1116,13 +1121,23 @@ function die(why){
       localStorage.setItem('duckBest',highScore);
     }catch(e){}
   }
+  const curRescued = S.rescued || 0;
+  if(curRescued > bestRescues){
+    bestRescues = curRescued;
+    try{
+      localStorage.setItem('bestRescues', bestRescues);
+      localStorage.setItem('highRescues', bestRescues);
+    }catch(e){}
+  }
   updateHighScoreUI();
+  updateContinueButtonsState();
   overlay('over',why);
 }
 function savePrev(){const s=S;s.jump.py=s.jump.y;s.duck.px=s.duck.x;s.tube.px=s.tube.x;s.tube.pz=s.tube.z}
 
 /* ---------- Overlay / สถานะ ---------- */
-const mm=$('#mm'),hw=$('#hw');let snd=true;
+const mm=$('#mm'),hw=$('#hw');
+let isSfxEnabled=true, isBgmEnabled=true, snd=true;
 let countdownTimer=null;
 const cdEl=$('#cd'),cdnEl=$('#cdn');
 function cancelCountdown(){
@@ -1142,9 +1157,47 @@ function showCountdownStep(val,text,isGo){
 function overlay(kind,why){
   cancelCountdown();
   $('#ov').hidden=false;$('#ot').textContent='จบเกม';
-  $('#op').innerHTML=`${why}<br><span style="font-size:1.05em;display:inline-block;margin-top:6px;">คะแนนรอบนี้: <b>${Math.floor(S.score)}</b> คะแนน (วิ่งได้ ${Math.floor(S.dist)} ม. · ช่วยคนได้ ${S.rescued} คน)</span><br><span style="display:inline-block;margin-top:4px;color:var(--duck);font-weight:700;">🏆 สถิติสูงสุด (Best): <b>${Math.floor(highScore)}</b> คะแนน</span>`;
-  $('#oh').textContent='ขอนไม้ต้องกระโดดข้าม ส่วนม้าและเรือต้องหลบเลน';
+  const curScore = Math.floor(S.score);
+  const topScore = Math.floor(highScore);
+  const curRescued = S.rescued || 0;
+  const topRescued = bestRescues;
+
+  $('#op').innerHTML = `
+    <div class="go-stats-grid">
+      <div class="go-stat-card">
+        <span class="go-stat-label">คะแนนรอบนี้</span>
+        <span class="go-stat-val">${curScore}</span>
+      </div>
+      <div class="go-stat-card best">
+        <span class="go-stat-label">🏆 คะแนนสูงสุด</span>
+        <span class="go-stat-val">${topScore}</span>
+      </div>
+      <div class="go-stat-card">
+        <span class="go-stat-label">ช่วยคนรอบนี้</span>
+        <span class="go-stat-val">${curRescued} คน</span>
+      </div>
+      <div class="go-stat-card best">
+        <span class="go-stat-label">🛟 สถิติช่วยคนสูงสุด</span>
+        <span class="go-stat-val">${topRescued} คน</span>
+      </div>
+    </div>
+  `;
+  if($('#oh')) $('#oh').textContent = '';
 }
+function hasActiveGame(){
+  return !!(S && S.state !== 'OVER' && (S.dist > 0 || S.score > 0 || S.t > 0));
+}
+
+function updateContinueButtonsState(){
+  const active = hasActiveGame();
+  const continueButtons = document.querySelectorAll('#mr, #igs-resume, #sm-resume, .btn-continue');
+
+  continueButtons.forEach(btn => {
+    btn.disabled = !active;
+    btn.classList.toggle('btn-continue-active', active);
+  });
+}
+
 function showMenu(){
   cancelCountdown();
   closeSettings();
@@ -1153,7 +1206,7 @@ function showMenu(){
   resetRestartConfirm();
   updateHighScoreUI();
   mm.hidden=false;$('#ov').hidden=true;
-  $('#mr').disabled=S.state!=='PAUSED';
+  updateContinueButtonsState();
 }
 function pause(){
   if(S.state==='RUN'||S.state==='COUNTDOWN'){
@@ -1173,6 +1226,7 @@ function startNew(){
   $('#ov').hidden=true;
   acc=0;
   last=performance.now()/1000;
+  updateContinueButtonsState();
 }
 function resume(){
   if(S.state!=='PAUSED')return;
@@ -1215,39 +1269,115 @@ function resetRestartConfirm(){
   }
   isConfirmingRestart = false;
   const btnMs = $('#ms');
-  const btnSmRestart = $('#sm-restart');
+  const btnIgsRestart = $('#igs-restart') || $('#sm-restart');
   const btnBr = $('#br');
   if(btnMs) btnMs.textContent = '▶ เริ่มเกม';
-  if(btnSmRestart) btnSmRestart.textContent = '🔄 เริ่มเกมใหม่';
+  if(btnIgsRestart) btnIgsRestart.textContent = '🔄 เริ่มเกมใหม่';
   if(btnBr) btnBr.textContent = 'เริ่มใหม่';
 }
 
 function updateSettingsUI(){
-  if($('#sm-sound')) $('#sm-sound').textContent = '🔊 เปิด/ปิดเสียง: ' + (snd ? 'เปิด' : 'ปิด');
-  if($('#sm-hitbox')) $('#sm-hitbox').textContent = '🎯 เปิด/ปิดฮิตบ็อกซ์: ' + (dbg ? 'เปิด' : 'ปิด');
-  if($('#sm-test')) $('#sm-test').textContent = '🛡️ โหมดทดสอบ: ' + (testMode ? 'เปิด 🟢' : 'ปิด ⚪');
+  const sfxText = '🔊 เอฟเฟค: ' + (isSfxEnabled ? 'เปิด' : 'ปิด');
+  const bgmText = '🎵 เพลง: ' + (isBgmEnabled ? 'เปิด' : 'ปิด');
+  const testText = '🛡️ โหมดทดสอบ: ' + (testMode ? 'เปิด 🟢' : 'ปิด ⚪');
+  const hitboxText = '🎯 เปิด/ปิดฮิตบ็อกซ์: ' + (dbg ? 'เปิด' : 'ปิด');
+
+  // Modal 1: เมนูตั้งค่าหน้าหลัก (Main Menu Settings)
+  if($('#mms-sfx')) $('#mms-sfx').textContent = sfxText;
+  if($('#mms-bgm')) $('#mms-bgm').textContent = bgmText;
+  if($('#mms-test')) $('#mms-test').textContent = testText;
+  if($('#mms-hitbox')) $('#mms-hitbox').textContent = hitboxText;
+
+  // Modal 2: เมนูตั้งค่าระหว่างเล่นเกม (In-Game Settings)
+  if($('#igs-sfx')) $('#igs-sfx').textContent = sfxText;
+  if($('#igs-bgm')) $('#igs-bgm').textContent = bgmText;
+  if($('#igs-test')) $('#igs-test').textContent = testText;
+  if($('#igs-hitbox')) $('#igs-hitbox').textContent = hitboxText;
+
+  // รองรับ ID เดิม
+  if($('#sm-sfx')) $('#sm-sfx').textContent = sfxText;
+  if($('#sm-bgm')) $('#sm-bgm').textContent = bgmText;
+  if($('#sm-test')) $('#sm-test').textContent = testText;
+  if($('#sm-hitbox')) $('#sm-hitbox').textContent = hitboxText;
+  if($('#sm-sound')) $('#sm-sound').textContent = '🔊 เปิด/ปิดเสียง: ' + (isSfxEnabled ? 'เปิด' : 'ปิด');
 }
 
-function openSettings(){
-  if(S.state === 'RUN' || S.state === 'COUNTDOWN'){
+function toggleSfx(){
+  isSfxEnabled = !isSfxEnabled;
+  snd = isSfxEnabled;
+  sfx.enabled = isSfxEnabled;
+  updateSettingsUI();
+}
+
+function toggleBgm(){
+  // สลับสถานะ boolean เท่านั้น (ไม่มีการสร้างหรือเล่นไฟล์เสียง BGM ใดๆ ทั้งสิ้น)
+  isBgmEnabled = !isBgmEnabled;
+  updateSettingsUI();
+}
+
+function toggleSound(){
+  toggleSfx();
+}
+
+function toggleHitbox(){
+  dbg = !dbg;
+  if($('#bd')) $('#bd').textContent = 'Hitbox: ' + (dbg ? 'เปิด' : 'ปิด');
+  updateSettingsUI();
+}
+
+function toggleTestMode(){
+  setTestMode(!testMode);
+}
+
+// 1. ฟังก์ชันเปิด/ปิด เมนูตั้งค่าหน้าหลัก (Main Menu Settings Modal)
+function openMainMenuSettings(){
+  updateSettingsUI();
+  if($('#main-menu-settings')) $('#main-menu-settings').hidden = false;
+}
+
+function closeMainMenuSettings(){
+  if($('#main-menu-settings')) $('#main-menu-settings').hidden = true;
+}
+
+// 2. ฟังก์ชันเปิด/ปิด เมนูตั้งค่าระหว่างเล่นเกม (In-Game Settings Modal)
+function openInGameSettings(){
+  if(S && (S.state === 'RUN' || S.state === 'COUNTDOWN')){
     cancelCountdown();
     S.state = 'PAUSED';
   }
   updateSettingsUI();
+  updateContinueButtonsState();
   resetRestartConfirm();
-  if($('#settings-menu')) $('#settings-menu').hidden = false;
+  if($('#in-game-settings')) $('#in-game-settings').hidden = false;
   if($('#btn-settings')) $('#btn-settings').hidden = true;
 }
 
-function closeSettings(){
-  if($('#settings-menu')) $('#settings-menu').hidden = true;
+function closeInGameSettings(){
+  if($('#in-game-settings')) $('#in-game-settings').hidden = true;
+  if($('#btn-settings') && S && (S.state === 'RUN' || S.state === 'PAUSED')) $('#btn-settings').hidden = false;
   resetRestartConfirm();
+  if(S && S.state === 'PAUSED' && ($('#mm') && $('#mm').hidden)){
+    resume();
+  }
+}
+
+// ฟังก์ชันปิดการตั้งค่าทั้งหมด
+function closeSettings(){
+  closeMainMenuSettings();
+  closeInGameSettings();
+  if($('#settings-menu')) $('#settings-menu').hidden = true;
+}
+
+function openSettings(){
+  openInGameSettings();
 }
 
 /* ---------- Skin System & Live Animated Preview ---------- */
 const SKINS = [
   { id: 'duck', name: 'เป็ดไปไหนวะ' },
-  { id: 'shark', name: 'ปลาทูย่านแม่กลอง' }
+  { id: 'shark', name: 'ปลาทูย่านแม่กลอง' },
+  { id: 'unicorn', name: 'เจ้าม้าตัวน้อยตัวจ้อย' },
+  { id: 'dog_moto', name: 'สาธุ 999' }
 ];
 let viewedSkinIndex = 0;
 let skinPreviewActive = false;
@@ -1259,14 +1389,70 @@ function updateSkinDisplay(){
   if($('#skin-name-display')){
     $('#skin-name-display').textContent = skin.name;
   }
-  if($('#skin-action-btn')){
-    if(pendingStartFromSkin){
-      $('#skin-action-btn').textContent = 'ตกลง & เริ่มเกม (' + skin.name + ')';
-      $('#skin-action-btn').classList.remove('active-skin-btn');
+  const btn = $('#skin-action-btn') || $('#skin-select-btn');
+  if(btn){
+    let highScore = parseInt(localStorage.getItem('highScore')) || 0;
+    let highRescues = parseInt(localStorage.getItem('highRescues')) || parseInt(localStorage.getItem('bestRescues')) || 0;
+
+    if(skin.id === 'shark'){
+      if(highScore >= 40000){
+        btn.disabled = false;
+        if(pendingStartFromSkin){
+          btn.textContent = 'ตกลง & เริ่มเกม (' + skin.name + ')';
+          btn.classList.remove('active-skin-btn');
+        } else {
+          const isEquipped = (currentSkin === skin.id);
+          btn.textContent = isEquipped ? '✓ กำลังใช้งาน' : 'เลือกใช้งาน';
+          btn.classList.toggle('active-skin-btn', isEquipped);
+        }
+      } else {
+        btn.disabled = true;
+        btn.textContent = 'ต้องการคะแนนสูงสุด 40,000';
+        btn.classList.remove('active-skin-btn');
+      }
+    } else if(skin.id === 'unicorn'){
+      if(highRescues >= 300){
+        btn.disabled = false;
+        if(pendingStartFromSkin){
+          btn.textContent = 'ตกลง & เริ่มเกม (' + skin.name + ')';
+          btn.classList.remove('active-skin-btn');
+        } else {
+          const isEquipped = (currentSkin === skin.id);
+          btn.textContent = isEquipped ? '✓ กำลังใช้งาน' : 'เลือกใช้งาน';
+          btn.classList.toggle('active-skin-btn', isEquipped);
+        }
+      } else {
+        btn.disabled = true;
+        btn.textContent = 'ต้องการสถิติช่วยคน 300';
+        btn.classList.remove('active-skin-btn');
+      }
+    } else if(skin.id === 'dog_moto'){
+      if(highScore >= 130000){
+        btn.disabled = false;
+        if(pendingStartFromSkin){
+          btn.textContent = 'ตกลง & เริ่มเกม (' + skin.name + ')';
+          btn.classList.remove('active-skin-btn');
+        } else {
+          const isEquipped = (currentSkin === skin.id);
+          btn.textContent = isEquipped ? '✓ กำลังใช้งาน' : 'เลือกใช้งาน';
+          btn.classList.toggle('active-skin-btn', isEquipped);
+        }
+      } else {
+        btn.disabled = true;
+        btn.textContent = 'ต้องการคะแนนสูงสุด 130,000';
+        btn.classList.remove('active-skin-btn');
+      }
     } else {
-      const isEquipped = (currentSkin === skin.id);
-      $('#skin-action-btn').textContent = isEquipped ? '✓ กำลังใช้งาน' : 'เลือกใช้งาน';
-      $('#skin-action-btn').classList.toggle('active-skin-btn', isEquipped);
+      // เป็ด (duck): เปิดใช้งานได้เสมอ
+      btn.disabled = false;
+      if(pendingStartFromSkin){
+        btn.textContent = 'ตกลง & เริ่มเกม (' + skin.name + ')';
+        btn.classList.remove('active-skin-btn');
+      } else {
+        const isEquipped = (currentSkin === skin.id);
+        btn.textContent = isEquipped ? '✓ กำลังใช้งาน' : 'เลือกใช้งาน';
+        btn.classList.toggle('active-skin-btn', isEquipped);
+      }
     }
   }
 }
@@ -1287,6 +1473,14 @@ function prevSkin(){
 
 function applyViewedSkin(){
   const skin = SKINS[viewedSkinIndex];
+  const viewedSkin = skin.id;
+  let highScore = parseInt(localStorage.getItem('highScore')) || 0;
+  let highRescues = parseInt(localStorage.getItem('highRescues')) || parseInt(localStorage.getItem('bestRescues')) || 0;
+
+  if (viewedSkin === 'shark' && highScore < 40000) return;
+  if (viewedSkin === 'unicorn' && highRescues < 300) return;
+  if (viewedSkin === 'dog_moto' && highScore < 130000) return;
+
   selectSkin(skin.id);
   closeSkinModal();
   if(pendingStartFromSkin){
@@ -1324,9 +1518,12 @@ function skinPreviewLoop(ms){
     pctx.stroke();
   }
 
-  // วาดตัวละครสกินที่กำลังดูอยู่ (หันหลังมุมเดียวกับในเกม พร้อมแอนิเมชันเคลื่อนไหวแบบเรียลไทม์)
+  // วาดตัวละครสกินที่กำลังดูอยู่ (จัดตำแหน่งกึ่งกลางกล่องพรีวิวด้วย translate w/2, h/2)
   const currentViewed = SKINS[viewedSkinIndex].id;
-  drawDuck({ x: w / 2, y: h / 2 + 10, s: 68 }, 0, 0, pctx, currentViewed, time);
+  pctx.save();
+  pctx.translate(w / 2, h / 2);
+  drawDuck({ x: 0, y: 15, s: 70 }, 0, 0, pctx, currentViewed, time);
+  pctx.restore();
 
   pctx.restore();
 
@@ -1397,43 +1594,22 @@ function toggleTestMode(){
 // ฟังก์ชันเริ่มเกมใหม่พร้อมระบบยืนยันในปุ่ม (Two-Tap Confirmation - ปลอดภัย 100% ไม่ใช้ window.confirm)
 function handleStartGame(e){
   if(e && e.preventDefault) e.preventDefault();
-  const btn = (e && e.currentTarget) || (e && e.target && e.target.closest('button')) || $('#ms');
+  const btn = (e && e.currentTarget) || (e && e.target && e.target.closest('button')) || ($('#sm-restart') || $('#ms'));
+  const isMainMenuBtn = (btn && btn.id === 'ms');
 
-  // กรณีที่ 1: ไม่มีเกมค้างอยู่ (หน้าแรกสุดหรือหน้า Game Over)
-  if(!S || S.state === 'MENU' || S.state === 'OVER'){
-    resetRestartConfirm();
-    closeSettings();
-    closeSkinModal();
-
-    // ตรวจสอบว่าผู้เล่นเคยเลือกสกินไว้แล้วหรือไม่ (First-Time Flow)
-    let hasSavedSkin = false;
-    try {
-      hasSavedSkin = !!localStorage.getItem('currentSkin');
-    } catch(err) {}
-
-    if(!hasSavedSkin){
-      // ผู้เล่นเล่นครั้งแรก -> เปิด Modal สกินให้เลือกก่อนเริ่มเกม
-      openSkinModal(true);
-      return;
-    }
-
-    startNew();
-    return;
-  }
-
-  // กรณีที่ 2: มีเกมกำลังเล่นอยู่หรือถูกหยุดชั่วคราว (S.state === 'PAUSED' หรือ 'RUN')
-  if(S.state === 'PAUSED' || S.state === 'RUN' || S.state === 'COUNTDOWN'){
+  // กรณีมีเกมกำลังเล่นอยู่หรือมีเกมค้างอยู่ (Active Game): ต้องกดยืนยัน 2 ครั้ง (Two-Tap Confirmation)
+  if(hasActiveGame()){
     if(!isConfirmingRestart){
-      // กดครั้งที่ 1: เปลี่ยนข้อความปุ่มเป็นข้อความยืนยัน และนับเวลา 3 วินาที (3000ms)
+      // กดครั้งที่ 1: เปลี่ยนข้อความปุ่มเพื่อขอการยืนยัน และตั้งเวลา 3 วินาที (3000ms)
       isConfirmingRestart = true;
-      if(btn) btn.textContent = 'ยืนยันเริ่มใหม่? (กดซ้ำ)';
+      if(btn) btn.textContent = isMainMenuBtn ? 'แน่ใจไหม? กดอีกครั้ง' : 'ยืนยันเริ่มใหม่? (กดซ้ำ)';
       if(confirmTimeout) clearTimeout(confirmTimeout);
       confirmTimeout = setTimeout(()=>{
         resetRestartConfirm();
       }, 3000);
       return;
     } else {
-      // กดครั้งที่ 2 (ภายใน 3 วินาที): ผู้เล่นยืนยันการเริ่มเกมใหม่
+      // กดครั้งที่ 2 (ภายใน 3 วินาที): ผู้เล่นยืนยันการเริ่มเกมใหม่จริง
       resetRestartConfirm();
       closeSettings();
       closeSkinModal();
@@ -1442,10 +1618,36 @@ function handleStartGame(e){
     }
   }
 
+  // กรณีไม่มีเกมค้างอยู่: เริ่มเกมใหม่ทันที (หรือเปิด Modal สกินหากเล่นครั้งแรก)
   resetRestartConfirm();
   closeSettings();
   closeSkinModal();
+
+  let hasSavedSkin = false;
+  try {
+    hasSavedSkin = !!localStorage.getItem('currentSkin');
+  } catch(err) {}
+
+  if(!hasSavedSkin){
+    openSkinModal(true);
+    return;
+  }
+
   startNew();
+}
+
+// ตัวจัดการปุ่มเล่นต่อ (Continue Button)
+function handleContinueGame(){
+  if(!hasActiveGame()) return;
+  cancelCountdown();
+  closeSettings();
+  closeSkinModal();
+  closeHowToPlay();
+  resetRestartConfirm();
+  mm.hidden = true;
+  $('#ov').hidden = true;
+  S.state = 'PAUSED'; // ตั้งเป็น PAUSED ชั่วคราวเพื่อให้ resume() เริ่มนับถอยหลัง 3-2-1
+  resume();
 }
 
 // ตัวจัดการปุ่มหยุด / เล่นต่อ (Pause Button)
@@ -1477,23 +1679,68 @@ function closeHowToPlay(){
 $('#go').onclick = startNew;
 $('#ms').onclick = handleStartGame;
 if($('#br')) $('#br').onclick = handleStartGame;
-$('#mr').onclick = resume;
+$('#mr').onclick = handleContinueGame;
 if($('#bp')) $('#bp').onclick = handleTogglePause;
 $('#gm').onclick = ()=>{cancelCountdown();closeSettings();closeSkinModal();closeHowToPlay();newGame();showMenu()};
 if($('#mh')) $('#mh').onclick = openHowToPlay;
+if($('#mm-how-btn')) $('#mm-how-btn').onclick = openHowToPlay;
 if($('#hx')) $('#hx').onclick = closeHowToPlay;
-$('#mso').onclick = toggleSound;
+if($('#mso')) $('#mso').onclick = toggleSound;
 
-// ผูกการทำงานปุ่มของ Settings Menu
-if($('#btn-settings')) $('#btn-settings').onclick = openSettings;
-if($('#sm-resume')) $('#sm-resume').onclick = ()=>{ closeSettings(); resume(); };
-if($('#sm-restart')) $('#sm-restart').onclick = handleStartGame;
+// ผูกการทำงานปุ่มเปิด/ปิด และปุ่มภายในของ Main Menu Settings Modal (ซ้ายบน)
+if($('#mm-settings-btn')) $('#mm-settings-btn').onclick = openMainMenuSettings;
+if($('#close-mm-settings-btn')) $('#close-mm-settings-btn').onclick = closeMainMenuSettings;
+if($('#mms-sfx')) $('#mms-sfx').onclick = toggleSfx;
+if($('#mms-bgm')) $('#mms-bgm').onclick = toggleBgm;
+if($('#mms-test')) $('#mms-test').onclick = toggleTestMode;
+if($('#mms-hitbox')) $('#mms-hitbox').onclick = toggleHitbox;
+
+// ผูกการทำงานปุ่มเปิด/ปิด และปุ่มภายในของ In-Game Settings Modal (ขวาล่าง)
+if($('#btn-settings')) $('#btn-settings').onclick = openInGameSettings;
+if($('#close-ig-settings-btn')) $('#close-ig-settings-btn').onclick = closeInGameSettings;
+if($('#igs-resume')) $('#igs-resume').onclick = ()=>{
+  if(!hasActiveGame()) return;
+  closeInGameSettings();
+  resume();
+};
+if($('#igs-restart')) $('#igs-restart').onclick = handleStartGame;
+if($('#igs-sfx')) $('#igs-sfx').onclick = toggleSfx;
+if($('#igs-bgm')) $('#igs-bgm').onclick = toggleBgm;
+if($('#igs-test')) $('#igs-test').onclick = toggleTestMode;
+if($('#igs-hitbox')) $('#igs-hitbox').onclick = toggleHitbox;
+if($('#igs-menu')) $('#igs-menu').onclick = ()=>{
+  if(S) S.state = 'MENU';
+  closeInGameSettings();
+  showMenu();
+};
+
+// รองรับการทำงานย้อนหลัง (Backward Compatibility)
+if($('#close-settings-btn')) $('#close-settings-btn').onclick = closeSettings;
+if($('#sm-sfx')) $('#sm-sfx').onclick = toggleSfx;
+if($('#sm-bgm')) $('#sm-bgm').onclick = toggleBgm;
 if($('#sm-sound')) $('#sm-sound').onclick = toggleSound;
 if($('#sm-hitbox')) $('#sm-hitbox').onclick = toggleHitbox;
 if($('#sm-test')) $('#sm-test').onclick = toggleTestMode;
-if($('#sm-menu')) $('#sm-menu').onclick = ()=>{ closeSettings(); showMenu(); };
+if($('#sm-resume')) $('#sm-resume').onclick = ()=>{
+  if(!hasActiveGame()) return;
+  closeSettings();
+  resume();
+};
+if($('#sm-restart')) $('#sm-restart').onclick = handleStartGame;
+if($('#sm-menu')) $('#sm-menu').onclick = ()=>{
+  if(S) S.state = 'MENU';
+  closeSettings();
+  showMenu();
+};
 
 // ผูกการทำงานปุ่มของ Skin Selection Menu
+function handleCloseSkinModal(){
+  closeSkinModal();
+  if(S && S.state === 'PAUSED'){
+    resume();
+  }
+}
+if($('#close-skin-btn')) $('#close-skin-btn').onclick = handleCloseSkinModal;
 if($('#btn-skin')) $('#btn-skin').onclick = handleSkinBtnClick;
 if($('#skin-prev')) $('#skin-prev').onclick = prevSkin;
 if($('#skin-next')) $('#skin-next').onclick = nextSkin;
@@ -1602,7 +1849,9 @@ function drawDuckModel(tctx, p, tilt = 0, h = 0, time = 0){
 
 /* ตัวละครโมเดลฉลาม (Shark Model: ปลาทูย่านแม่กลอง) - รองรับ targetCtx */
 function drawSharkModel(tctx, p, tilt = 0, h = 0, time = 0){
-  const u = p.s, w = Math.max(2, u * .07);
+  const isGameplay = (tctx === ctx);
+  const visualScale = isGameplay ? 1.48 : 1.0; // ขยายโมเดลฉลามให้ตัวใหญ่และดุดันขึ้นเฉพาะตอนเล่นเกม (ฮิตบ็อกซ์และฟิสิกส์เท่าเดิม 100%)
+  const u = p.s * visualScale, w = Math.max(2, u * .07);
   const sw = Math.sin(time * 12), bob = Math.abs(sw) * .025 * u;
   const tailWag = Math.sin(time * 14); // Tail wagging animation
   tctx.save();
@@ -1714,11 +1963,606 @@ function drawSharkModel(tctx, p, tilt = 0, h = 0, time = 0){
   tctx.restore();
 }
 
+/* ตัวละครโมเดลยูนิคอร์น (Unicorn Model: เจ้าม้าตัวน้อยตัวจ้อย) - รองรับ targetCtx */
+function drawUnicornModel(tctx, p, tilt = 0, h = 0, time = 0){
+  const isGameplay = (tctx === ctx);
+  const visualScale = isGameplay ? 1.48 : 1.0; // ขยายโมเดลยูนิคอร์นให้ตัวใหญ่และโดดเด่นน่าเกรงขาม (ฮิตบ็อกซ์เท่าเป็ด 100%)
+  const u = p.s * visualScale, w = Math.max(2, u * .07);
+  const sw = Math.sin(time * 12), bob = Math.abs(sw) * .035 * u;
+  const tailWag = Math.sin(time * 14); // หางสะบัดดุ๊กดิ๊ก
+  tctx.save();
+  tctx.translate(p.x, p.y);
+
+  // 1. ระลอกคลื่นน้ำและละอองน้ำรอบเท้ายูนิคอร์น (Water Ripple & Splash FX)
+  if(h < .05){
+    const rw = .64 * u + Math.sin(time * 10) * .08 * u;
+    const rh = .24 * u + Math.cos(time * 10) * .03 * u;
+    tctx.fillStyle = 'rgba(255,255,255,.62)';
+    tctx.beginPath(); tctx.ellipse(0, .04 * u, rw, rh, 0, 0, 7); tctx.fill();
+    tctx.strokeStyle = 'rgba(196,181,253,.85)'; // ประกายสีม่วงพาสเทล
+    tctx.lineWidth = w * .8;
+    tctx.beginPath(); tctx.ellipse(0, .04 * u, rw * .88, rh * .75, 0, 0, 7); tctx.stroke();
+
+    // ละอองน้ำกระเซ็นที่กีบเท้า
+    const spX1 = -.22 * u + Math.sin(time * 15) * .05 * u;
+    const spX2 = .22 * u + Math.cos(time * 15) * .05 * u;
+    tctx.fillStyle = 'rgba(255,255,255,.75)';
+    tctx.beginPath(); tctx.ellipse(spX1, .12 * u, .16 * u, .06 * u, 0, 0, 7); tctx.fill();
+    tctx.beginPath(); tctx.ellipse(spX2, .12 * u, .16 * u, .06 * u, 0, 0, 7); tctx.fill();
+  }
+
+  // 2. เงาใต้ตัว
+  tctx.fillStyle = 'rgba(10,20,60,.35)';
+  tctx.beginPath(); tctx.ellipse(0, 0, .46 * u, .17 * u, 0, 0, 7); tctx.fill();
+
+  tctx.translate(0, -h * u - bob);
+  tctx.rotate(tilt + sw * .025);
+
+  const UNI_WHITE = '#ffffff';
+  const UNI_SHADOW = '#f1f5f9';
+  const UNI_PINK = '#f472b6';
+  const UNI_PURPLE = '#c084fc';
+  const UNI_CYAN = '#38bdf8';
+  const UNI_GOLD = '#fbbf24';
+  const UNI_HOOF = '#a855f7';
+
+  // 3. กีบเท้าหลังซ้าย-ขวา (Cute Hooves running)
+  const legCycle = Math.sin(time * 12);
+  // ขาซ้าย
+  tctx.save();
+  tctx.translate(-.18 * u, -.1 * u + legCycle * .03 * u);
+  tctx.beginPath();
+  tctx.roundRect(-.07 * u, -.12 * u, .14 * u, .22 * u, .05 * u);
+  tctx.fillStyle = UNI_WHITE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath();
+  tctx.roundRect(-.07 * u, .02 * u, .14 * u, .08 * u, .03 * u);
+  tctx.fillStyle = UNI_HOOF; tctx.fill();
+  tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.restore();
+
+  // ขาขวา
+  tctx.save();
+  tctx.translate(.18 * u, -.1 * u - legCycle * .03 * u);
+  tctx.beginPath();
+  tctx.roundRect(-.07 * u, -.12 * u, .14 * u, .22 * u, .05 * u);
+  tctx.fillStyle = UNI_WHITE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath();
+  tctx.roundRect(-.07 * u, .02 * u, .14 * u, .08 * u, .03 * u);
+  tctx.fillStyle = UNI_HOOF; tctx.fill();
+  tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.restore();
+
+  // 4. หางฟูสายรุ้งสะบัดดุ๊กดิ๊ก (Rainbow Flowing Tail - Tail Wagging)
+  tctx.save();
+  tctx.translate(0, -.18 * u);
+  tctx.rotate(tailWag * .36);
+  // ช่อหางสีชมพู
+  tctx.beginPath();
+  tctx.moveTo(-.06 * u, 0);
+  tctx.bezierCurveTo(-.24 * u, .08 * u, -.32 * u, .28 * u, -.2 * u, .42 * u);
+  tctx.bezierCurveTo(-.1 * u, .32 * u, -.02 * u, .18 * u, 0, .08 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_PINK; tctx.fill();
+  tctx.lineWidth = w * .85; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ช่อหางสีม่วงกลาง
+  tctx.beginPath();
+  tctx.moveTo(0, 0);
+  tctx.bezierCurveTo(-.08 * u, .12 * u, -.04 * u, .35 * u, .05 * u, .46 * u);
+  tctx.bezierCurveTo(.12 * u, .34 * u, .08 * u, .16 * u, .04 * u, .05 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_PURPLE; tctx.fill();
+  tctx.lineWidth = w * .85; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ช่อหางสีฟ้าสดใส
+  tctx.beginPath();
+  tctx.moveTo(.05 * u, 0);
+  tctx.bezierCurveTo(.18 * u, .08 * u, .28 * u, .25 * u, .22 * u, .4 * u);
+  tctx.bezierCurveTo(.12 * u, .28 * u, .06 * u, .14 * u, 0, .05 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_CYAN; tctx.fill();
+  tctx.lineWidth = w * .85; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.restore();
+
+  // 5. ลำตัวม้าอ้วนกลมน่ารัก (Plump Chubby Body seen from rear)
+  tctx.beginPath();
+  tctx.ellipse(0, -.36 * u, .36 * u, .32 * u, 0, 0, 7);
+  tctx.fillStyle = UNI_WHITE; tctx.fill();
+  tctx.lineWidth = w * 1.15; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ไฮไลท์เงาด้านล่างตัว
+  tctx.beginPath();
+  tctx.arc(0, -.36 * u, .34 * u, .2, Math.PI - .2);
+  tctx.strokeStyle = UNI_SHADOW;
+  tctx.lineWidth = w * 1.2;
+  tctx.stroke();
+
+  // สัญลักษณ์ดาววิเศษที่สะโพก (Cutie Mark Star)
+  tctx.fillStyle = UNI_GOLD;
+  tctx.beginPath();
+  tctx.arc(.22 * u, -.32 * u, .045 * u, 0, 7);
+  tctx.fill();
+  tctx.beginPath();
+  tctx.arc(-.22 * u, -.32 * u, .045 * u, 0, 7);
+  tctx.fill();
+
+  // 6. ศีรษะและลำคอ (Head & Mane)
+  tctx.beginPath();
+  tctx.ellipse(0, -.74 * u, .28 * u, .26 * u, 0, 0, 7);
+  tctx.fillStyle = UNI_WHITE; tctx.fill();
+  tctx.lineWidth = w * 1.15; tctx.strokeStyle = INK; tctx.stroke();
+
+  // 7. หูม้าซ้าย-ขวา
+  // หูซ้าย
+  tctx.beginPath();
+  tctx.moveTo(-.22 * u, -.82 * u);
+  tctx.lineTo(-.28 * u, -1.02 * u);
+  tctx.lineTo(-.12 * u, -.92 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_WHITE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath();
+  tctx.moveTo(-.2 * u, -.84 * u);
+  tctx.lineTo(-.25 * u, -.98 * u);
+  tctx.lineTo(-.14 * u, -.92 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_PINK; tctx.fill();
+
+  // หูขวา
+  tctx.beginPath();
+  tctx.moveTo(.22 * u, -.82 * u);
+  tctx.lineTo(.28 * u, -1.02 * u);
+  tctx.lineTo(.12 * u, -.92 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_WHITE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath();
+  tctx.moveTo(.2 * u, -.84 * u);
+  tctx.lineTo(.25 * u, -.98 * u);
+  tctx.lineTo(.14 * u, -.92 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_PINK; tctx.fill();
+
+  // 8. แผงคอสีพาสเทลฟรุ้งฟริ้ง (Pastel Mane flowing down)
+  tctx.beginPath();
+  tctx.ellipse(-.06 * u, -.92 * u, .1 * u, .06 * u, -.3, 0, 7);
+  tctx.fillStyle = UNI_PURPLE; tctx.fill();
+  tctx.lineWidth = w * .7; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.beginPath();
+  tctx.ellipse(.06 * u, -.91 * u, .09 * u, .05 * u, .3, 0, 7);
+  tctx.fillStyle = UNI_PINK; tctx.fill();
+  tctx.lineWidth = w * .7; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.beginPath();
+  tctx.ellipse(-.04 * u, -.68 * u, .12 * u, .18 * u, -.1, 0, 7);
+  tctx.fillStyle = UNI_PINK; tctx.fill();
+  tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.beginPath();
+  tctx.ellipse(.04 * u, -.64 * u, .1 * u, .16 * u, .1, 0, 7);
+  tctx.fillStyle = UNI_CYAN; tctx.fill();
+  tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+
+  // 9. เขาเดี่ยวยูนิคอร์นสีทองส่องประกาย (Golden Spiral Unicorn Horn)
+  tctx.beginPath();
+  tctx.moveTo(-.06 * u, -.95 * u);
+  tctx.lineTo(0, -1.28 * u);
+  tctx.lineTo(.06 * u, -.95 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_GOLD; tctx.fill();
+  tctx.lineWidth = w * 1.05; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ลายเกลียวบนเขา
+  tctx.strokeStyle = '#d97706';
+  tctx.lineWidth = w * .75;
+  tctx.beginPath(); tctx.moveTo(-.03 * u, -1.03 * u); tctx.lineTo(.03 * u, -1.06 * u); tctx.stroke();
+  tctx.beginPath(); tctx.moveTo(-.02 * u, -1.13 * u); tctx.lineTo(.02 * u, -1.16 * u); tctx.stroke();
+  tctx.beginPath(); tctx.moveTo(-.01 * u, -1.22 * u); tctx.lineTo(.01 * u, -1.24 * u); tctx.stroke();
+
+  // ประกายเวทมนตร์วิ้งวับบนยอดเขา (Sparkle star)
+  const sparkScale = 1 + Math.sin(time * 8) * .25;
+  tctx.fillStyle = '#fff';
+  tctx.beginPath();
+  tctx.arc(0, -1.3 * u, .03 * u * sparkScale, 0, 7);
+  tctx.fill();
+
+  tctx.restore();
+}
+
+/* ตัวละครโมเดลหมาขี่มอไซค์ (Dog Moto Model: สาธุ 999) - รองรับ targetCtx */
+function drawDogMotoModel(tctx, p, tilt = 0, h = 0, time = 0){
+  const isGameplay = (tctx === ctx);
+  // สเกลโมเดลใหญ่กว่ายูนิคอร์น (Unicorn = 1.48, Dog Moto = 1.62)
+  const visualScale = isGameplay ? 1.62 : 1.08;
+  const u = p.s * visualScale;
+  // บังคับความหนาของเส้นให้บางคมชัด (Thin & crisp line width 1.35px) เพื่อไม่ให้ภาพกลายเป็นก้อนหนาเตอะ
+  const w = 1.35;
+
+  // แอนิเมชันแรงสั่นสะเทือนของเครื่องยนต์มอเตอร์ไซค์และการเคลื่อนไหว
+  const engineRumble = Math.sin(time * 38) * 0.015 * u;
+  const sw = Math.sin(time * 12), bob = Math.abs(sw) * 0.02 * u;
+  const tailWag = Math.sin(time * 18);
+
+  // ระบบ State Swapping ลูป 15 วินาที: 13 วินาทีแรกมองตรงไปข้างหน้า, 2 วินาทีสุดท้ายหันมายิ้มแฉ่งให้กล้อง
+  const cycleTime = ((time % 15) + 15) % 15;
+  const isSmiling = (cycleTime >= 13);
+
+  tctx.save();
+  tctx.translate(p.x, p.y);
+
+  // 1. Water Ripple & Splash FX ที่ล้อรถมอเตอร์ไซค์
+  if(h < 0.05){
+    const rw = 0.65 * u + Math.sin(time * 14) * 0.07 * u;
+    const rh = 0.22 * u + Math.cos(time * 14) * 0.03 * u;
+    // คลื่นน้ำรอบล้อหลัง
+    tctx.fillStyle = 'rgba(255,255,255,0.65)';
+    tctx.beginPath(); tctx.ellipse(0, 0.05 * u, rw, rh, 0, 0, 7); tctx.fill();
+    tctx.strokeStyle = 'rgba(147,197,253,0.85)';
+    tctx.lineWidth = w;
+    tctx.beginPath(); tctx.ellipse(0, 0.05 * u, rw * 0.88, rh * 0.75, 0, 0, 7); tctx.stroke();
+
+    // ละอองน้ำดีดกระเซ็นออกจากล้อหมุนความเร็วสูง
+    const sp1 = Math.sin(time * 20) * 0.08 * u;
+    const sp2 = Math.cos(time * 24) * 0.07 * u;
+    tctx.fillStyle = 'rgba(240,249,255,0.8)';
+    tctx.beginPath(); tctx.ellipse(-0.16 * u + sp1, 0.12 * u, 0.14 * u, 0.05 * u, -0.2, 0, 7); tctx.fill();
+    tctx.beginPath(); tctx.ellipse(0.16 * u + sp2, 0.12 * u, 0.14 * u, 0.05 * u, 0.2, 0, 7); tctx.fill();
+    tctx.beginPath(); tctx.arc(0, 0.16 * u, 0.06 * u, 0, 7); tctx.fill();
+  }
+
+  // 2. เงาใต้ท้องรถ
+  tctx.fillStyle = 'rgba(10,20,60,0.38)';
+  tctx.beginPath(); tctx.ellipse(0, 0, 0.52 * u, 0.18 * u, 0, 0, 7); tctx.fill();
+
+  // ขยับตัวตามการเอียงเลนและการกระโดด + แรงเครื่องยนต์
+  tctx.translate(0, -h * u - bob + engineRumble);
+  tctx.rotate(tilt + sw * 0.02);
+
+  const DOG_FUR = '#f59e0b';       // ขนสีส้มทอง
+  const DOG_BELLY = '#fef3c7';     // ขนสีครีมอ่อน
+  const DOG_EAR_INNER = '#fca5a5'; // หูด้านในสีชมพู
+  const MOTO_BODY = '#ef4444';     // มอเตอร์ไซค์สีแดงซิ่ง
+  const MOTO_CHROME = '#e2e8f0';
+  const TIRE_COLOR = '#1e293b';
+
+  // 3. ท่อไอเสียและควันปุ๋งๆ ทางขวา
+  tctx.save();
+  tctx.fillStyle = MOTO_CHROME;
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.roundRect(0.18 * u, -0.12 * u, 0.1 * u, 0.22 * u, 0.03 * u);
+  tctx.fill(); tctx.stroke();
+  // ปลายท่อ
+  tctx.fillStyle = '#475569';
+  tctx.beginPath();
+  tctx.ellipse(0.23 * u, 0.09 * u, 0.045 * u, 0.025 * u, 0, 0, 7);
+  tctx.fill(); tctx.stroke();
+  // ควันไอเสีย
+  const smokeAl = Math.max(0, 0.7 - (cycleTime % 0.4));
+  tctx.fillStyle = `rgba(226,232,240,${smokeAl})`;
+  tctx.beginPath();
+  tctx.arc(0.25 * u + Math.sin(time * 15) * 0.03 * u, 0.16 * u, 0.04 * u, 0, 7);
+  tctx.fill();
+  tctx.restore();
+
+  // 4. ล้อหลังยางมอเตอร์ไซค์ (Rear Tire)
+  tctx.fillStyle = TIRE_COLOR;
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.roundRect(-0.13 * u, -0.22 * u, 0.26 * u, 0.32 * u, 0.1 * u);
+  tctx.fill(); tctx.stroke();
+
+  // ดอกยางและแม็กล้อ
+  tctx.fillStyle = '#64748b';
+  tctx.beginPath();
+  tctx.ellipse(0, -0.06 * u, 0.09 * u, 0.12 * u, 0, 0, 7);
+  tctx.fill();
+  tctx.strokeStyle = '#94a3b8';
+  tctx.lineWidth = w * 0.8;
+  tctx.stroke();
+
+  // 5. บังโคลนท้าย (Rear Mudguard / Fender)
+  tctx.fillStyle = MOTO_BODY;
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.moveTo(-0.2 * u, -0.28 * u);
+  tctx.quadraticCurveTo(0, -0.38 * u, 0.2 * u, -0.28 * u);
+  tctx.lineTo(0.16 * u, -0.12 * u);
+  tctx.quadraticCurveTo(0, -0.16 * u, -0.16 * u, -0.12 * u);
+  tctx.closePath();
+  tctx.fill(); tctx.stroke();
+
+  // ไฟเลี้ยวซ้าย-ขวา
+  tctx.fillStyle = '#f59e0b';
+  tctx.beginPath(); tctx.arc(-0.21 * u, -0.22 * u, 0.03 * u, 0, 7); tctx.fill(); tctx.stroke();
+  tctx.beginPath(); tctx.arc(0.21 * u, -0.22 * u, 0.03 * u, 0, 7); tctx.fill(); tctx.stroke();
+
+  // 6. ป้ายทะเบียน "สาธุ 999" (Geometric Centering Method แก้ไข WebKit Text Alignment Bug)
+  tctx.fillStyle = '#ffffff';
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.roundRect(-0.14 * u, -0.15 * u, 0.28 * u, 0.14 * u, 0.03 * u);
+  tctx.fill(); tctx.stroke();
+
+  const plateText = 'สาธุ 999';
+  tctx.fillStyle = '#dc2626';
+  tctx.font = `bold ${Math.max(7, Math.round(u * 0.065))}px sans-serif`;
+  tctx.textAlign = 'left';
+  tctx.textBaseline = 'middle';
+  const textWidth = tctx.measureText(plateText).width;
+  const startX = -textWidth / 2; // คำนวณจุดเริ่มต้น X ด้วยวิธีทางเรขาคณิตให้อยู่ตรงกลางแผ่นป้ายพอดี
+  tctx.fillText(plateText, startX, -0.08 * u);
+
+  // 7. ไฟท้ายมอเตอร์ไซค์ทรงสปอร์ต (Red Tail-light)
+  tctx.fillStyle = '#ef4444';
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.moveTo(-0.12 * u, -0.32 * u);
+  tctx.lineTo(0.12 * u, -0.32 * u);
+  tctx.lineTo(0.08 * u, -0.24 * u);
+  tctx.lineTo(-0.08 * u, -0.24 * u);
+  tctx.closePath();
+  tctx.fill(); tctx.stroke();
+  // ไฮไลท์สะท้อนไฟ
+  tctx.fillStyle = 'rgba(255,255,255,0.7)';
+  tctx.beginPath();
+  tctx.ellipse(0, -0.29 * u, 0.06 * u, 0.02 * u, 0, 0, 7);
+  tctx.fill();
+
+  // 8. แฮนด์มอเตอร์ไซค์และกระจกมองข้าง (Handlebars & Mirrors)
+  tctx.strokeStyle = '#475569';
+  tctx.lineWidth = w * 1.3;
+  tctx.beginPath();
+  tctx.moveTo(-0.38 * u, -0.62 * u);
+  tctx.lineTo(0.38 * u, -0.62 * u);
+  tctx.stroke();
+
+  // ปลอกแฮนด์ดำ
+  tctx.fillStyle = '#0f172a';
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath(); tctx.roundRect(-0.42 * u, -0.65 * u, 0.08 * u, 0.06 * u, 0.02 * u); tctx.fill(); tctx.stroke();
+  tctx.beginPath(); tctx.roundRect(0.34 * u, -0.65 * u, 0.08 * u, 0.06 * u, 0.02 * u); tctx.fill(); tctx.stroke();
+
+  // ก้านและกระจกมองข้างโครเมียม
+  tctx.strokeStyle = MOTO_CHROME;
+  tctx.lineWidth = w;
+  tctx.beginPath(); tctx.moveTo(-0.35 * u, -0.62 * u); tctx.lineTo(-0.39 * u, -0.74 * u); tctx.stroke();
+  tctx.beginPath(); tctx.moveTo(0.35 * u, -0.62 * u); tctx.lineTo(0.39 * u, -0.74 * u); tctx.stroke();
+  tctx.fillStyle = '#bae6fd';
+  tctx.strokeStyle = INK;
+  tctx.beginPath(); tctx.ellipse(-0.39 * u, -0.76 * u, 0.045 * u, 0.035 * u, 0, 0, 7); tctx.fill(); tctx.stroke();
+  tctx.beginPath(); tctx.ellipse(0.39 * u, -0.76 * u, 0.045 * u, 0.035 * u, 0, 0, 7); tctx.fill(); tctx.stroke();
+
+  // 9. เบาะมอเตอร์ไซค์ (Motorcycle Saddle Seat)
+  tctx.fillStyle = '#1c1917';
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.roundRect(-0.24 * u, -0.46 * u, 0.48 * u, 0.16 * u, 0.06 * u);
+  tctx.fill(); tctx.stroke();
+
+  // 10. ลำตัวน้องหมา (Dog Body sitting on the seat)
+  tctx.fillStyle = DOG_FUR;
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.ellipse(0, -0.54 * u, 0.28 * u, 0.22 * u, 0, 0, 7);
+  tctx.fill(); tctx.stroke();
+
+  // ขาหลังน้องหมาที่แนบข้างเบาะ
+  tctx.beginPath(); tctx.ellipse(-0.25 * u, -0.46 * u, 0.09 * u, 0.11 * u, -0.2, 0, 7); tctx.fill(); tctx.stroke();
+  tctx.beginPath(); tctx.ellipse(0.25 * u, -0.46 * u, 0.09 * u, 0.11 * u, 0.2, 0, 7); tctx.fill(); tctx.stroke();
+
+  // หางน้องหมากระดิกดุ๊กดิ๊กด้านหลังเบาะ
+  tctx.save();
+  tctx.translate(0, -0.42 * u);
+  tctx.rotate(tailWag * 0.4);
+  tctx.beginPath();
+  tctx.moveTo(-0.04 * u, 0);
+  tctx.quadraticCurveTo(0.12 * u, 0.12 * u, 0.2 * u, 0.02 * u);
+  tctx.quadraticCurveTo(0.12 * u, -0.06 * u, 0.04 * u, -0.04 * u);
+  tctx.closePath();
+  tctx.fillStyle = DOG_FUR; tctx.fill(); tctx.stroke();
+  // ปลายหางสีขาว
+  tctx.fillStyle = DOG_BELLY;
+  tctx.beginPath(); tctx.arc(0.16 * u, 0.03 * u, 0.035 * u, 0, 7); tctx.fill();
+  tctx.restore();
+
+  // ขาหน้าน้องหมาเอื้อมไปจับแฮนด์รถ
+  tctx.fillStyle = DOG_FUR;
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.ellipse(-0.25 * u, -0.6 * u, 0.08 * u, 0.05 * u, -0.3, 0, 7);
+  tctx.fill(); tctx.stroke();
+  tctx.beginPath();
+  tctx.ellipse(0.25 * u, -0.6 * u, 0.08 * u, 0.05 * u, 0.3, 0, 7);
+  tctx.fill(); tctx.stroke();
+
+  // ปลอกคอสีแดงนำโชคพร้อมเหรียญพระ/กระดิ่งทอง "สาธุ"
+  tctx.fillStyle = '#dc2626';
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.roundRect(-0.16 * u, -0.67 * u, 0.32 * u, 0.06 * u, 0.02 * u);
+  tctx.fill(); tctx.stroke();
+  // เหรียญทองห้อยคอ
+  tctx.fillStyle = '#f59e0b';
+  tctx.beginPath(); tctx.arc(0, -0.62 * u, 0.04 * u, 0, 7); tctx.fill(); tctx.stroke();
+
+  // 11. ศีรษะและใบหน้าน้องหมา (สลับระหว่าง สถานะปกติ กับ สถานะหันมายิ้มแฉ่ง)
+  tctx.save();
+  if(!isSmiling){
+    // === สภาวะปกติ (0-13 วินาที): มองตรงไปข้างหน้า (เห็นด้านหลังหัวและหูกระพือ) ===
+    tctx.fillStyle = DOG_FUR;
+    tctx.strokeStyle = INK;
+    tctx.lineWidth = w;
+
+    // หัวกลมมองจากด้านหลัง
+    tctx.beginPath();
+    tctx.ellipse(0, -0.82 * u, 0.26 * u, 0.24 * u, 0, 0, 7);
+    tctx.fill(); tctx.stroke();
+
+    // หูซ้าย-ขวาพัดกระพือตามลม (Ear Flapping Animation)
+    const earFlap = Math.sin(time * 16) * 0.08;
+    // หูซ้าย
+    tctx.save();
+    tctx.translate(-0.2 * u, -0.92 * u);
+    tctx.rotate(-0.2 + earFlap);
+    tctx.beginPath();
+    tctx.moveTo(0, 0);
+    tctx.quadraticCurveTo(-0.18 * u, -0.12 * u, -0.16 * u, 0.16 * u);
+    tctx.quadraticCurveTo(-0.06 * u, 0.14 * u, 0.04 * u, 0.06 * u);
+    tctx.closePath();
+    tctx.fillStyle = '#b45309'; tctx.fill(); tctx.stroke();
+    tctx.restore();
+
+    // หูขวา
+    tctx.save();
+    tctx.translate(0.2 * u, -0.92 * u);
+    tctx.rotate(0.2 - earFlap);
+    tctx.beginPath();
+    tctx.moveTo(0, 0);
+    tctx.quadraticCurveTo(0.18 * u, -0.12 * u, 0.16 * u, 0.16 * u);
+    tctx.quadraticCurveTo(0.06 * u, 0.14 * u, -0.04 * u, 0.06 * u);
+    tctx.closePath();
+    tctx.fillStyle = '#b45309'; tctx.fill(); tctx.stroke();
+    tctx.restore();
+
+  } else {
+    // === สภาวะหันมายิ้มแฉ่ง (13-15 วินาที): หันหน้ากลับมามองกล้อง ยิ้มกว้างแลบลิ้นมีความสุข ===
+    tctx.translate(0, -0.82 * u);
+    tctx.rotate(Math.sin(time * 6) * 0.05); // โยกหัวน่ารัก
+
+    // หัวกลมมองตรงมาที่กล้อง
+    tctx.fillStyle = DOG_FUR;
+    tctx.strokeStyle = INK;
+    tctx.lineWidth = w;
+    tctx.beginPath();
+    tctx.ellipse(0, 0, 0.27 * u, 0.24 * u, 0, 0, 7);
+    tctx.fill(); tctx.stroke();
+
+    // กระเปาะแก้มและปากสีขาวครีม (Muzzle)
+    tctx.fillStyle = DOG_BELLY;
+    tctx.beginPath();
+    tctx.ellipse(0, 0.06 * u, 0.16 * u, 0.12 * u, 0, 0, 7);
+    tctx.fill(); tctx.stroke();
+
+    // หูตั้งน่ารัก 2 ข้าง
+    tctx.fillStyle = DOG_FUR;
+    tctx.beginPath();
+    tctx.moveTo(-0.16 * u, -0.16 * u);
+    tctx.lineTo(-0.27 * u, -0.34 * u);
+    tctx.lineTo(-0.06 * u, -0.22 * u);
+    tctx.closePath();
+    tctx.fill(); tctx.stroke();
+    tctx.fillStyle = DOG_EAR_INNER;
+    tctx.beginPath();
+    tctx.moveTo(-0.16 * u, -0.18 * u);
+    tctx.lineTo(-0.24 * u, -0.31 * u);
+    tctx.lineTo(-0.09 * u, -0.22 * u);
+    tctx.closePath();
+    tctx.fill();
+
+    tctx.fillStyle = DOG_FUR;
+    tctx.beginPath();
+    tctx.moveTo(0.16 * u, -0.16 * u);
+    tctx.lineTo(0.27 * u, -0.34 * u);
+    tctx.lineTo(0.06 * u, -0.22 * u);
+    tctx.closePath();
+    tctx.fill(); tctx.stroke();
+    tctx.fillStyle = DOG_EAR_INNER;
+    tctx.beginPath();
+    tctx.moveTo(0.16 * u, -0.18 * u);
+    tctx.lineTo(0.24 * u, -0.31 * u);
+    tctx.lineTo(0.09 * u, -0.22 * u);
+    tctx.closePath();
+    tctx.fill();
+
+    // ตาหยียิ้มแฉ่งรูปสระอิมีความสุข (Happy Crescent Smiling Eyes ^^)
+    tctx.strokeStyle = INK;
+    tctx.lineWidth = w * 1.3;
+    tctx.beginPath(); tctx.arc(-0.1 * u, -0.03 * u, 0.045 * u, Math.PI * 1.1, Math.PI * 1.9); tctx.stroke();
+    tctx.beginPath(); tctx.arc(0.1 * u, -0.03 * u, 0.045 * u, Math.PI * 1.1, Math.PI * 1.9); tctx.stroke();
+
+    // แว่นกันแดดสีดำสุดเท่ (Cool Black Sunglasses เฉพาะตอนหันมายิ้ม 13-15 วินาที)
+    tctx.fillStyle = '#0f172a';
+    tctx.strokeStyle = INK;
+    tctx.lineWidth = w;
+    // เลนส์ซ้าย
+    tctx.beginPath();
+    tctx.roundRect(-0.16 * u, -0.075 * u, 0.11 * u, 0.08 * u, 0.02 * u);
+    tctx.fill(); tctx.stroke();
+    // เลนส์ขวา
+    tctx.beginPath();
+    tctx.roundRect(0.05 * u, -0.075 * u, 0.11 * u, 0.08 * u, 0.02 * u);
+    tctx.fill(); tctx.stroke();
+    // สะพานแว่นเชื่อมตรงกลาง
+    tctx.strokeStyle = '#0f172a';
+    tctx.lineWidth = w * 1.5;
+    tctx.beginPath();
+    tctx.moveTo(-0.05 * u, -0.045 * u);
+    tctx.lineTo(0.05 * u, -0.045 * u);
+    tctx.stroke();
+    // ขาแว่นด้านข้าง
+    tctx.strokeStyle = '#0f172a';
+    tctx.lineWidth = w * 1.2;
+    tctx.beginPath(); tctx.moveTo(-0.16 * u, -0.055 * u); tctx.lineTo(-0.22 * u, -0.075 * u); tctx.stroke();
+    tctx.beginPath(); tctx.moveTo(0.16 * u, -0.055 * u); tctx.lineTo(0.22 * u, -0.075 * u); tctx.stroke();
+    // แสงสะท้อนสีขาวเฉียงบนเลนส์ (Sunglasses Glare Highlight)
+    tctx.strokeStyle = 'rgba(255,255,255,0.75)';
+    tctx.lineWidth = w * 0.9;
+    tctx.beginPath(); tctx.moveTo(-0.14 * u, -0.065 * u); tctx.lineTo(-0.08 * u, -0.015 * u); tctx.stroke();
+    tctx.beginPath(); tctx.moveTo(0.07 * u, -0.065 * u); tctx.lineTo(0.13 * u, -0.015 * u); tctx.stroke();
+
+    // แก้มชมพูระเรื่อ (Blush)
+    tctx.fillStyle = 'rgba(251,113,133,0.65)';
+    tctx.beginPath(); tctx.arc(-0.16 * u, 0.04 * u, 0.04 * u, 0, 7); tctx.fill();
+    tctx.beginPath(); tctx.arc(0.16 * u, 0.04 * u, 0.04 * u, 0, 7); tctx.fill();
+
+    // จมูกดำเงา
+    tctx.fillStyle = '#0f172a';
+    tctx.beginPath();
+    tctx.ellipse(0, 0.01 * u, 0.042 * u, 0.028 * u, 0, 0, 7);
+    tctx.fill();
+
+    // รอยยิ้มกว้างอ้าปากแลบลิ้น (Open Happy Mouth with Tongue out)
+    tctx.fillStyle = '#991b1b';
+    tctx.lineWidth = w;
+    tctx.beginPath();
+    tctx.arc(0, 0.07 * u, 0.06 * u, 0.1, Math.PI - 0.1);
+    tctx.closePath();
+    tctx.fill(); tctx.stroke();
+
+    // ลิ้นสีชมพูน่ารักห้อยออกมา
+    tctx.fillStyle = '#f472b6';
+    tctx.beginPath();
+    tctx.ellipse(0, 0.12 * u, 0.038 * u, 0.045 * u, 0, 0, 7);
+    tctx.fill(); tctx.stroke();
+  }
+  tctx.restore();
+
+  tctx.restore();
+}
+
 /* ตัวละครหลัก: สลับการวาดตามสกิน และรองรับ targetCtx (ทั้ง Game Canvas และ Preview Canvas) */
 function drawDuck(p, tilt = 0, h = 0, targetCtx = ctx, skinOverride = null, time = (S ? S.t : 0)){
   const skin = skinOverride || currentSkin;
   if(skin === 'shark'){
     drawSharkModel(targetCtx, p, tilt, h, time);
+  } else if(skin === 'unicorn'){
+    drawUnicornModel(targetCtx, p, tilt, h, time);
+  } else if(skin === 'dog_moto'){
+    drawDogMotoModel(targetCtx, p, tilt, h, time);
   } else {
     drawDuckModel(targetCtx, p, tilt, h, time);
   }
