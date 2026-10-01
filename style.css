@@ -63,24 +63,39 @@ canvas{
   text-align:right;
 }
 
-/* Settings Button (Bottom Right) */
+/* Settings Button & Skin Button (Bottom Right) */
 #btn-settings{
   position:fixed;
   right:14px;
   bottom:14px;
   z-index:25;
-  padding:10px 18px;
+  padding:10px 16px;
   font-size:15px;
   background:rgba(5,40,50,.85);
   color:var(--ink);
   border:2px solid var(--duck);
   border-radius:14px;
   box-shadow:0 4px 0 #1a1240;
+  cursor:pointer;
 }
-#btn-settings[hidden]{
+#btn-skin{
+  position:fixed;
+  right:124px;
+  bottom:14px;
+  z-index:25;
+  padding:10px 16px;
+  font-size:15px;
+  background:rgba(5,40,50,.85);
+  color:var(--ink);
+  border:2px solid var(--duck);
+  border-radius:14px;
+  box-shadow:0 4px 0 #1a1240;
+  cursor:pointer;
+}
+#btn-settings[hidden],#btn-skin[hidden]{
   display:none;
 }
-#btn-settings:active{
+#btn-settings:active,#btn-skin:active{
   transform:translateY(2px);
   box-shadow:0 2px 0 #1a1240;
 }
@@ -116,6 +131,162 @@ canvas{
   width:100%;
   font-size:16px;
   padding:10px 14px;
+}
+
+/* Minimalist Skin Selection Modal */
+#skin-modal{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(4,30,40,.78);
+  padding:16px;
+  z-index:36;
+}
+#skin-modal[hidden]{
+  display:none !important;
+}
+.skin-card{
+  width:min(320px,90vw);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:16px;
+  padding:22px 18px;
+}
+.skin-carousel{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:14px;
+  width:100%;
+}
+.skin-arrow{
+  background:rgba(5,40,50,.85);
+  border:2px solid var(--duck);
+  color:var(--duck);
+  font-size:22px;
+  padding:10px 14px;
+  border-radius:14px;
+  cursor:pointer;
+  box-shadow:0 3px 0 #1a1240;
+  transition:all .15s ease;
+  user-select:none;
+}
+.skin-arrow:hover{
+  background:var(--duck);
+  color:#1a1240;
+}
+.skin-arrow:active{
+  transform:translateY(2px);
+  box-shadow:0 1px 0 #1a1240;
+}
+.skin-preview-wrap{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:10px;
+}
+#skin-preview-canvas{
+  width:150px;
+  height:150px;
+  border-radius:20px;
+  border:3px solid var(--duck);
+  background:#0e4a5d;
+  box-shadow:0 6px 16px rgba(0,0,0,.45);
+}
+.skin-name-display{
+  font-size:18px;
+  font-weight:700;
+  color:var(--duck);
+  text-shadow:0 2px 0 #1a1240;
+  min-height:24px;
+  text-align:center;
+}
+#skin-action-btn{
+  width:100%;
+  padding:12px 16px;
+  font-size:16px;
+}
+#skin-action-btn.active-skin-btn{
+  background:#16a34a;
+  color:#fff;
+  box-shadow:0 4px 0 #14532d;
+}
+
+/* Best Score Badge on Main Menu */
+.best-badge{
+  margin:4px auto 8px;
+  padding:6px 16px;
+  background:rgba(5,40,50,.85);
+  border:2px solid var(--duck);
+  border-radius:20px;
+  color:var(--duck);
+  font-size:clamp(14px,3.8vw,17px);
+  font-weight:700;
+  box-shadow:0 3px 0 #1a1240;
+}
+.best-badge span{
+  color:#fff;
+}
+
+/* How to play revamp */
+.how-to-play-card{
+  max-width:480px;
+  max-height:85vh;
+  display:flex;
+  flex-direction:column;
+  padding:20px 22px;
+  text-align:left;
+}
+#hw[hidden]{
+  display:none !important;
+}
+.how-to-play-card h1{
+  text-align:center;
+  margin-bottom:8px;
+}
+.how-to-scroll{
+  overflow-y:auto;
+  margin:10px 0;
+  padding-right:6px;
+  max-height:55vh;
+}
+.hw-section{
+  margin-bottom:14px;
+}
+.hw-section h3{
+  margin:0 0 4px;
+  font-size:16px;
+  color:var(--duck);
+}
+.hw-section p{
+  margin:0;
+  font-size:13.5px;
+  line-height:1.5;
+}
+.hw-section ul{
+  margin:4px 0 0 16px;
+  padding:0;
+  font-size:13.5px;
+  line-height:1.6;
+}
+.hw-warning{
+  background:rgba(232,65,47,.22);
+  border:2px solid #e8412f;
+  border-radius:12px;
+  padding:10px 12px;
+  margin-top:10px;
+  font-size:12.5px;
+  line-height:1.55;
+  color:#ffe8e5;
+}
+#hx{
+  display:block;
+  margin:20px auto 0;
+  width:min(260px,80%);
+  text-align:center;
 }
 
 #tools{

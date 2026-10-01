@@ -18,9 +18,18 @@ const JUMP={v0:9.5,g:26};
 const RESCUE={radius:.5};
 const VIC_MSGS=['ช่วยด้วย','รวยไม่ไหวแล้ว!'];
 const LANE=[-3.3,0,3.3],OBSTACLE_X=[-2.5,0,2.5],CAM={z:8,y:2.4},BANK=4.4,SPEEDBOAT_RZ=22;
-let S,camX=0,dbg=false,testMode=false,best=0;
+let S,camX=0,dbg=false,testMode=false,highScore=0,best=0;
+let currentSkin='duck';
 
-try{best=+localStorage.getItem('duckBest')||0}catch(e){}
+try{
+  highScore=+localStorage.getItem('highScore')||+localStorage.getItem('duckBest')||0;
+  best=highScore;
+  currentSkin=localStorage.getItem('currentSkin')||'duck';
+}catch(e){}
+
+function updateHighScoreUI(){
+  if($('#mm-best-val')) $('#mm-best-val').textContent = Math.floor(highScore);
+}
 if($('#bd'))$('#bd').onclick=()=>{dbg=!dbg;$('#bd').textContent='Hitbox: '+(dbg?'เปิด':'ปิด')};
 function setTestMode(val){
   testMode=!!val;
@@ -207,7 +216,14 @@ class Input{
     this.queue=[];this.ts=null;
     addEventListener('keydown',e=>{
       if(['ArrowLeft','ArrowRight','ArrowUp','Space'].includes(e.code))e.preventDefault();
-      const mv=!$('#mm').hidden;if(mv||!$('#ov').hidden||($('#settings-menu')&&!$('#settings-menu').hidden)){if(e.code==='KeyP'||e.code==='Escape'){e.preventDefault();if($('#settings-menu')&&!$('#settings-menu').hidden){closeSettings();resume();return}if(S.state==='PAUSED'){resume();return}}if(e.code==='Enter'||e.code==='Space'){e.preventDefault();$(mv?(S.state==='PAUSED'?'#mr':'#ms'):'#go').click()}return}
+      if($('#hw')&&!$('#hw').hidden){if(e.code==='KeyP'||e.code==='Escape'||e.code==='Enter'||e.code==='Space'){e.preventDefault();closeHowToPlay();return}}
+      if($('#skin-modal')&&!$('#skin-modal').hidden){
+        if(e.code==='ArrowLeft'||e.code==='KeyA'){e.preventDefault();prevSkin();return}
+        if(e.code==='ArrowRight'||e.code==='KeyD'){e.preventDefault();nextSkin();return}
+        if(e.code==='Enter'||e.code==='Space'){e.preventDefault();applyViewedSkin();return}
+        if(e.code==='KeyP'||e.code==='Escape'){e.preventDefault();closeSkinModal();if(S.state==='PAUSED')resume();return}
+      }
+      const mv=!$('#mm').hidden;if(mv||!$('#ov').hidden||($('#settings-menu')&&!$('#settings-menu').hidden)){if(e.code==='KeyP'||e.code==='Escape'){e.preventDefault();if($('#settings-menu')&&!$('#settings-menu').hidden){closeSettings();resume();return}if(S.state==='PAUSED'){resume();return}}if(e.code==='Enter'||e.code==='Space'){e.preventDefault();if($('#settings-menu')&&!$('#settings-menu').hidden)return;$(mv?(S.state==='PAUSED'?'#mr':'#ms'):'#go').click()}return}
       if(e.repeat)return;
       if(e.code==='ArrowLeft'||e.code==='KeyA')this.push(-1);
       if(e.code==='ArrowRight'||e.code==='KeyD')this.push(1);
@@ -1092,7 +1108,15 @@ function die(why){
   if(testMode || (S.invincibleTimer > 0))return;
   sfx.play('hit');
   S.state='OVER';S.shake=.4;
-  if(S.score>best){best=S.score;try{localStorage.setItem('duckBest',Math.floor(best))}catch(e){}}
+  if(S.score>highScore){
+    highScore=Math.floor(S.score);
+    best=highScore;
+    try{
+      localStorage.setItem('highScore',highScore);
+      localStorage.setItem('duckBest',highScore);
+    }catch(e){}
+  }
+  updateHighScoreUI();
   overlay('over',why);
 }
 function savePrev(){const s=S;s.jump.py=s.jump.y;s.duck.px=s.duck.x;s.tube.px=s.tube.x;s.tube.pz=s.tube.z}
@@ -1118,14 +1142,17 @@ function showCountdownStep(val,text,isGo){
 function overlay(kind,why){
   cancelCountdown();
   $('#ov').hidden=false;$('#ot').textContent='จบเกม';
-  $('#op').textContent=why+' — ได้ '+Math.floor(S.score)+' คะแนน วิ่งไป '+Math.floor(S.dist)+' ม. ช่วยคนได้ '+S.rescued+' คน (สูงสุด '+Math.floor(best)+')';
+  $('#op').innerHTML=`${why}<br><span style="font-size:1.05em;display:inline-block;margin-top:6px;">คะแนนรอบนี้: <b>${Math.floor(S.score)}</b> คะแนน (วิ่งได้ ${Math.floor(S.dist)} ม. · ช่วยคนได้ ${S.rescued} คน)</span><br><span style="display:inline-block;margin-top:4px;color:var(--duck);font-weight:700;">🏆 สถิติสูงสุด (Best): <b>${Math.floor(highScore)}</b> คะแนน</span>`;
   $('#oh').textContent='ขอนไม้ต้องกระโดดข้าม ส่วนม้าและเรือต้องหลบเลน';
 }
 function showMenu(){
   cancelCountdown();
   closeSettings();
+  closeSkinModal();
+  closeHowToPlay();
   resetRestartConfirm();
-  mm.hidden=false;hw.hidden=true;$('#ov').hidden=true;
+  updateHighScoreUI();
+  mm.hidden=false;$('#ov').hidden=true;
   $('#mr').disabled=S.state!=='PAUSED';
 }
 function pause(){
@@ -1138,6 +1165,8 @@ function pause(){
 function startNew(){
   cancelCountdown();
   closeSettings();
+  closeSkinModal();
+  closeHowToPlay();
   newGame();
   S.state='RUN';
   mm.hidden=true;
@@ -1215,6 +1244,138 @@ function closeSettings(){
   resetRestartConfirm();
 }
 
+/* ---------- Skin System & Live Animated Preview ---------- */
+const SKINS = [
+  { id: 'duck', name: 'เป็ดไปไหนวะ' },
+  { id: 'shark', name: 'ปลาทูย่านแม่กลอง' }
+];
+let viewedSkinIndex = 0;
+let skinPreviewActive = false;
+let skinPreviewRaf = null;
+let pendingStartFromSkin = false;
+
+function updateSkinDisplay(){
+  const skin = SKINS[viewedSkinIndex];
+  if($('#skin-name-display')){
+    $('#skin-name-display').textContent = skin.name;
+  }
+  if($('#skin-action-btn')){
+    if(pendingStartFromSkin){
+      $('#skin-action-btn').textContent = 'ตกลง & เริ่มเกม (' + skin.name + ')';
+      $('#skin-action-btn').classList.remove('active-skin-btn');
+    } else {
+      const isEquipped = (currentSkin === skin.id);
+      $('#skin-action-btn').textContent = isEquipped ? '✓ กำลังใช้งาน' : 'เลือกใช้งาน';
+      $('#skin-action-btn').classList.toggle('active-skin-btn', isEquipped);
+    }
+  }
+}
+
+function updateSkinUI(){
+  updateSkinDisplay();
+}
+
+function nextSkin(){
+  viewedSkinIndex = (viewedSkinIndex + 1) % SKINS.length;
+  updateSkinDisplay();
+}
+
+function prevSkin(){
+  viewedSkinIndex = (viewedSkinIndex - 1 + SKINS.length) % SKINS.length;
+  updateSkinDisplay();
+}
+
+function applyViewedSkin(){
+  const skin = SKINS[viewedSkinIndex];
+  selectSkin(skin.id);
+  closeSkinModal();
+  if(pendingStartFromSkin){
+    pendingStartFromSkin = false;
+    startNew();
+  } else if(S && S.state === 'PAUSED'){
+    resume();
+  }
+}
+
+function skinPreviewLoop(ms){
+  if(!skinPreviewActive) return;
+  const canvas = $('#skin-preview-canvas');
+  if(!canvas){ skinPreviewActive = false; return; }
+  const pctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const time = ms / 1000;
+
+  // วาดพื้นหลังระลอกคลื่นน้ำ
+  pctx.clearRect(0, 0, w, h);
+  pctx.save();
+  pctx.fillStyle = '#0e4a5d';
+  pctx.beginPath();
+  pctx.roundRect(0, 0, w, h, 18);
+  pctx.fill();
+  pctx.clip();
+
+  pctx.strokeStyle = 'rgba(34, 182, 238, 0.24)';
+  pctx.lineWidth = 2.5;
+  for(let y = 16; y < h + 20; y += 22){
+    pctx.beginPath();
+    for(let x = -10; x < w + 16; x += 16){
+      pctx.quadraticCurveTo(x + 4, y + Math.sin(time * 3 + x) * 2, x + 8, y);
+    }
+    pctx.stroke();
+  }
+
+  // วาดตัวละครสกินที่กำลังดูอยู่ (หันหลังมุมเดียวกับในเกม พร้อมแอนิเมชันเคลื่อนไหวแบบเรียลไทม์)
+  const currentViewed = SKINS[viewedSkinIndex].id;
+  drawDuck({ x: w / 2, y: h / 2 + 10, s: 68 }, 0, 0, pctx, currentViewed, time);
+
+  pctx.restore();
+
+  skinPreviewRaf = requestAnimationFrame(skinPreviewLoop);
+}
+
+function openSkinModal(isFirstTime = false){
+  pendingStartFromSkin = isFirstTime;
+  viewedSkinIndex = SKINS.findIndex(s => s.id === currentSkin);
+  if(viewedSkinIndex < 0) viewedSkinIndex = 0;
+
+  if($('#skin-modal')) $('#skin-modal').hidden = false;
+  if($('#btn-settings')) $('#btn-settings').hidden = true;
+  if($('#btn-skin')) $('#btn-skin').hidden = true;
+
+  updateSkinDisplay();
+
+  if(!skinPreviewActive){
+    skinPreviewActive = true;
+    skinPreviewRaf = requestAnimationFrame(skinPreviewLoop);
+  }
+}
+
+function closeSkinModal(){
+  if($('#skin-modal')) $('#skin-modal').hidden = true;
+  skinPreviewActive = false;
+  if(skinPreviewRaf){
+    cancelAnimationFrame(skinPreviewRaf);
+    skinPreviewRaf = null;
+  }
+}
+
+function selectSkin(skinId){
+  currentSkin = skinId;
+  try {
+    localStorage.setItem('currentSkin', skinId);
+  } catch(e) {}
+  updateSkinDisplay();
+}
+
+function handleSkinBtnClick(e){
+  if(e && e.preventDefault) e.preventDefault();
+  if(S.state === 'RUN' || S.state === 'COUNTDOWN'){
+    cancelCountdown();
+    S.state = 'PAUSED';
+  }
+  openSkinModal(false);
+}
+
 function toggleSound(){
   snd = !snd;
   sfx.enabled = snd;
@@ -1238,10 +1399,24 @@ function handleStartGame(e){
   if(e && e.preventDefault) e.preventDefault();
   const btn = (e && e.currentTarget) || (e && e.target && e.target.closest('button')) || $('#ms');
 
-  // กรณีที่ 1: ไม่มีเกมค้างอยู่ (หน้าแรกสุดหรือหน้า Game Over) -> เริ่มเกมทันที
+  // กรณีที่ 1: ไม่มีเกมค้างอยู่ (หน้าแรกสุดหรือหน้า Game Over)
   if(!S || S.state === 'MENU' || S.state === 'OVER'){
     resetRestartConfirm();
     closeSettings();
+    closeSkinModal();
+
+    // ตรวจสอบว่าผู้เล่นเคยเลือกสกินไว้แล้วหรือไม่ (First-Time Flow)
+    let hasSavedSkin = false;
+    try {
+      hasSavedSkin = !!localStorage.getItem('currentSkin');
+    } catch(err) {}
+
+    if(!hasSavedSkin){
+      // ผู้เล่นเล่นครั้งแรก -> เปิด Modal สกินให้เลือกก่อนเริ่มเกม
+      openSkinModal(true);
+      return;
+    }
+
     startNew();
     return;
   }
@@ -1261,6 +1436,7 @@ function handleStartGame(e){
       // กดครั้งที่ 2 (ภายใน 3 วินาที): ผู้เล่นยืนยันการเริ่มเกมใหม่
       resetRestartConfirm();
       closeSettings();
+      closeSkinModal();
       startNew();
       return;
     }
@@ -1268,6 +1444,7 @@ function handleStartGame(e){
 
   resetRestartConfirm();
   closeSettings();
+  closeSkinModal();
   startNew();
 }
 
@@ -1284,14 +1461,27 @@ function handleTogglePause(e){
   }
 }
 
+function openHowToPlay(){
+  if(hw){
+    hw.hidden = false;
+    hw.style.display = 'flex';
+  }
+}
+function closeHowToPlay(){
+  if(hw){
+    hw.hidden = true;
+    hw.style.display = 'none';
+  }
+}
+
 $('#go').onclick = startNew;
 $('#ms').onclick = handleStartGame;
 if($('#br')) $('#br').onclick = handleStartGame;
 $('#mr').onclick = resume;
 if($('#bp')) $('#bp').onclick = handleTogglePause;
-$('#gm').onclick = ()=>{cancelCountdown();closeSettings();newGame();showMenu()};
-$('#mh').onclick = ()=>hw.hidden=false;
-$('#hx').onclick = ()=>hw.hidden=true;
+$('#gm').onclick = ()=>{cancelCountdown();closeSettings();closeSkinModal();closeHowToPlay();newGame();showMenu()};
+if($('#mh')) $('#mh').onclick = openHowToPlay;
+if($('#hx')) $('#hx').onclick = closeHowToPlay;
 $('#mso').onclick = toggleSound;
 
 // ผูกการทำงานปุ่มของ Settings Menu
@@ -1302,6 +1492,12 @@ if($('#sm-sound')) $('#sm-sound').onclick = toggleSound;
 if($('#sm-hitbox')) $('#sm-hitbox').onclick = toggleHitbox;
 if($('#sm-test')) $('#sm-test').onclick = toggleTestMode;
 if($('#sm-menu')) $('#sm-menu').onclick = ()=>{ closeSettings(); showMenu(); };
+
+// ผูกการทำงานปุ่มของ Skin Selection Menu
+if($('#btn-skin')) $('#btn-skin').onclick = handleSkinBtnClick;
+if($('#skin-prev')) $('#skin-prev').onclick = prevSkin;
+if($('#skin-next')) $('#skin-next').onclick = nextSkin;
+if($('#skin-action-btn')) $('#skin-action-btn').onclick = applyViewedSkin;
 document.addEventListener('click',e=>{const b=e.target.closest('button');if(b){sfx.play('click');b.blur()}});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();last=performance.now()/1000});
 
@@ -1362,23 +1558,170 @@ function drawSplashes(zoff){
   }
 }
 
-/* เป็ดตัวละครหลัก */
-function drawDuck(p,tilt,h=0){
-  const u=p.s,w=lw(u),T=S.t,sw=Math.sin(T*9),bob=Math.abs(sw)*.03*u;ctx.save();ctx.translate(p.x,p.y);
-  if(h<.05){
-    const bw=.58*u+Math.sin(T*12)*.06*u;
-    ctx.fillStyle='rgba(255,255,255,.55)';ell(0,.02*u,bw,.15*u);
-    ctx.strokeStyle='#fff';ctx.lineWidth=w*.75;ctx.beginPath();ctx.arc(0,.02*u,bw*.85,.2,Math.PI-.2);ctx.stroke();
+/* ตัวละครโมเดลเป็ดดั้งเดิม (Duck Model: เป็ดไปไหนวะ) - รองรับ targetCtx */
+function drawDuckModel(tctx, p, tilt = 0, h = 0, time = 0){
+  const u = p.s, w = Math.max(2, u * .07);
+  const sw = Math.sin(time * 9), bob = Math.abs(sw) * .03 * u;
+  tctx.save();
+  tctx.translate(p.x, p.y);
+  if(h < .05){
+    const bw = .58 * u + Math.sin(time * 12) * .06 * u;
+    tctx.fillStyle = 'rgba(255,255,255,.55)';
+    tctx.beginPath(); tctx.ellipse(0, .02 * u, bw, .15 * u, 0, 0, 7); tctx.fill();
+    tctx.strokeStyle = '#fff'; tctx.lineWidth = w * .75;
+    tctx.beginPath(); tctx.arc(0, .02 * u, bw * .85, .2, Math.PI - .2); tctx.stroke();
   }
-  ctx.fillStyle='rgba(10,20,60,.35)';ell(0,0,.44*u,.15*u);
-  ctx.translate(0,-h*u-bob);ctx.rotate(tilt+sw*.03);
-  E(-.18*u,-.04*u+sw*.03*u,.11*u,.05*u,'#ff8a00',w*.8);E(.18*u,-.04*u-sw*.03*u,.11*u,.05*u,'#ff8a00',w*.8);
-  E(0,-.34*u,.42*u,.34*u,'#ffe11a',w);
-  E(-.3*u,-.4*u,.14*u,.23*u,'#ffb800',w*.8);E(.3*u,-.4*u,.14*u,.23*u,'#ffb800',w*.8);
-  TRI([[-.13*u,-.14*u],[.13*u,-.14*u],[0,-.42*u]],'#ffb800',w*.8);
-  E(0,-.74*u,.24*u,.23*u,'#ffe11a',w);E(0,-.63*u,.15*u,.07*u,'#ffc800',w*.4);
-  TRI([[-.05*u,-.93*u],[.05*u,-.93*u],[.02*u,-1.06*u]],'#ffe11a',w*.6);
-  ctx.restore();
+  tctx.fillStyle = 'rgba(10,20,60,.35)';
+  tctx.beginPath(); tctx.ellipse(0, 0, .44 * u, .15 * u, 0, 0, 7); tctx.fill();
+
+  tctx.translate(0, -h * u - bob);
+  tctx.rotate(tilt + sw * .03);
+
+  // เท้าเป็ด
+  tctx.beginPath(); tctx.ellipse(-.18 * u, -.04 * u + sw * .03 * u, .11 * u, .05 * u, 0, 0, 7); tctx.fillStyle = '#ff8a00'; tctx.fill(); tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath(); tctx.ellipse(.18 * u, -.04 * u - sw * .03 * u, .11 * u, .05 * u, 0, 0, 7); tctx.fillStyle = '#ff8a00'; tctx.fill(); tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ลำตัวเป็ดสีเหลือง
+  tctx.beginPath(); tctx.ellipse(0, -.34 * u, .42 * u, .34 * u, 0, 0, 7); tctx.fillStyle = '#ffe11a'; tctx.fill(); tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ปีกสองข้าง
+  tctx.beginPath(); tctx.ellipse(-.3 * u, -.4 * u, .14 * u, .23 * u, 0, 0, 7); tctx.fillStyle = '#ffb800'; tctx.fill(); tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath(); tctx.ellipse(.3 * u, -.4 * u, .14 * u, .23 * u, 0, 0, 7); tctx.fillStyle = '#ffb800'; tctx.fill(); tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+
+  // หางเป็ด
+  tctx.beginPath(); tctx.moveTo(-.13 * u, -.14 * u); tctx.lineTo(.13 * u, -.14 * u); tctx.lineTo(0, -.42 * u); tctx.closePath(); tctx.fillStyle = '#ffb800'; tctx.fill(); tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ศีรษะและหงอน
+  tctx.beginPath(); tctx.ellipse(0, -.74 * u, .24 * u, .23 * u, 0, 0, 7); tctx.fillStyle = '#ffe11a'; tctx.fill(); tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath(); tctx.ellipse(0, -.63 * u, .15 * u, .07 * u, 0, 0, 7); tctx.fillStyle = '#ffc800'; tctx.fill(); tctx.lineWidth = w * .4; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.beginPath(); tctx.moveTo(-.05 * u, -.93 * u); tctx.lineTo(.05 * u, -.93 * u); tctx.lineTo(.02 * u, -1.06 * u); tctx.closePath(); tctx.fillStyle = '#ffe11a'; tctx.fill(); tctx.lineWidth = w * .6; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.restore();
+}
+
+/* ตัวละครโมเดลฉลาม (Shark Model: ปลาทูย่านแม่กลอง) - รองรับ targetCtx */
+function drawSharkModel(tctx, p, tilt = 0, h = 0, time = 0){
+  const u = p.s, w = Math.max(2, u * .07);
+  const sw = Math.sin(time * 12), bob = Math.abs(sw) * .025 * u;
+  const tailWag = Math.sin(time * 14); // Tail wagging animation
+  tctx.save();
+  tctx.translate(p.x, p.y);
+
+  // 1. ระลอกคลื่นน้ำและละอองท้ายหาง
+  if(h < .05){
+    const rw = .62 * u + Math.sin(time * 10) * .07 * u;
+    const rh = .22 * u + Math.cos(time * 10) * .03 * u;
+    tctx.fillStyle = 'rgba(255,255,255,.62)';
+    tctx.beginPath(); tctx.ellipse(0, .03 * u, rw, rh, 0, 0, 7); tctx.fill();
+    tctx.strokeStyle = 'rgba(165,243,252,.85)';
+    tctx.lineWidth = w * .8;
+    tctx.beginPath(); tctx.ellipse(0, .03 * u, rw * .88, rh * .75, 0, 0, 7); tctx.stroke();
+
+    const twx = tailWag * .08 * u;
+    tctx.fillStyle = 'rgba(255,255,255,.7)';
+    tctx.beginPath(); tctx.ellipse(twx, .16 * u, .24 * u, .08 * u, 0, 0, 7); tctx.fill();
+  }
+
+  // เงาใต้ตัว
+  tctx.fillStyle = 'rgba(10,20,60,.35)';
+  tctx.beginPath(); tctx.ellipse(0, 0, .46 * u, .16 * u, 0, 0, 7); tctx.fill();
+
+  tctx.translate(0, -h * u - bob);
+  tctx.rotate(tilt + sw * .025);
+
+  const SHARK_BLUE = '#50769d';
+  const SHARK_BELLY = '#f0f4f8';
+  const SHARK_DARK = '#3d5d7e';
+
+  // 2. ครีบข้างซ้ายและขวา
+  tctx.beginPath();
+  tctx.moveTo(-.18 * u, -.32 * u);
+  tctx.bezierCurveTo(-.44 * u, -.26 * u, -.52 * u, -.14 * u, -.4 * u, -.04 * u);
+  tctx.bezierCurveTo(-.3 * u, -.08 * u, -.18 * u, -.18 * u, -.14 * u, -.2 * u);
+  tctx.closePath();
+  tctx.fillStyle = SHARK_BLUE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.beginPath();
+  tctx.moveTo(.18 * u, -.32 * u);
+  tctx.bezierCurveTo(.44 * u, -.26 * u, .52 * u, -.14 * u, .4 * u, -.04 * u);
+  tctx.bezierCurveTo(.3 * u, -.08 * u, .18 * u, -.18 * u, .14 * u, -.2 * u);
+  tctx.closePath();
+  tctx.fillStyle = SHARK_BLUE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+
+  // 3. ครีบหางดุ๊กดิ๊กด้านหลัง (Tail-Wagging Animation)
+  tctx.save();
+  tctx.translate(0, -.08 * u);
+  tctx.rotate(tailWag * .34);
+  tctx.beginPath();
+  tctx.moveTo(-.11 * u, -.1 * u);
+  tctx.quadraticCurveTo(0, .02 * u, .11 * u, -.1 * u);
+  tctx.lineTo(.06 * u, .06 * u);
+  tctx.lineTo(-.06 * u, .06 * u);
+  tctx.closePath();
+  tctx.fillStyle = SHARK_BLUE; tctx.fill();
+  tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.beginPath();
+  tctx.moveTo(0, .04 * u);
+  tctx.bezierCurveTo(-.14 * u, .07 * u, -.28 * u, .17 * u, -.24 * u, .27 * u);
+  tctx.bezierCurveTo(-.15 * u, .23 * u, -.05 * u, .17 * u, 0, .13 * u);
+  tctx.bezierCurveTo(.05 * u, .17 * u, .15 * u, .23 * u, .24 * u, .27 * u);
+  tctx.bezierCurveTo(.28 * u, .17 * u, .14 * u, .07 * u, 0, .04 * u);
+  tctx.closePath();
+  tctx.fillStyle = SHARK_BLUE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.restore();
+
+  // 4. ลำตัวฉลาม
+  tctx.beginPath();
+  tctx.moveTo(0, -.84 * u);
+  tctx.bezierCurveTo(-.38 * u, -.74 * u, -.42 * u, -.26 * u, -.18 * u, -.05 * u);
+  tctx.bezierCurveTo(-.08 * u, -.01 * u, .08 * u, -.01 * u, .18 * u, -.05 * u);
+  tctx.bezierCurveTo(.42 * u, -.26 * u, .38 * u, -.74 * u, 0, -.84 * u);
+  tctx.closePath();
+  tctx.fillStyle = SHARK_BLUE; tctx.fill();
+  tctx.lineWidth = w * 1.15; tctx.strokeStyle = INK; tctx.stroke();
+
+  // 5. ท้องขาว
+  tctx.beginPath();
+  tctx.moveTo(-.17 * u, -.05 * u);
+  tctx.bezierCurveTo(-.1 * u, -.01 * u, .1 * u, -.01 * u, .17 * u, -.05 * u);
+  tctx.bezierCurveTo(.11 * u, -.15 * u, -.11 * u, -.15 * u, -.17 * u, -.05 * u);
+  tctx.fillStyle = SHARK_BELLY; tctx.fill();
+  tctx.lineWidth = w * .7; tctx.strokeStyle = INK; tctx.stroke();
+
+  // 6. ครีบหลัง
+  tctx.beginPath();
+  tctx.moveTo(-.03 * u, -.54 * u);
+  tctx.quadraticCurveTo(0, -.78 * u, .08 * u, -.92 * u);
+  tctx.quadraticCurveTo(.03 * u, -.68 * u, .05 * u, -.42 * u);
+  tctx.closePath();
+  tctx.fillStyle = SHARK_DARK; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+
+  // 7. รอยเหงือก 3 ขีด
+  tctx.lineWidth = w * .85; tctx.strokeStyle = INK; tctx.lineCap = 'round';
+  tctx.beginPath(); tctx.arc(-.24 * u, -.45 * u, .08 * u, .2, 1.1); tctx.stroke();
+  tctx.beginPath(); tctx.arc(-.21 * u, -.38 * u, .08 * u, .2, 1.1); tctx.stroke();
+  tctx.beginPath(); tctx.arc(-.18 * u, -.31 * u, .08 * u, .2, 1.1); tctx.stroke();
+  tctx.beginPath(); tctx.arc(.24 * u, -.45 * u, .08 * u, Math.PI - 1.1, Math.PI - .2); tctx.stroke();
+  tctx.beginPath(); tctx.arc(.21 * u, -.38 * u, .08 * u, Math.PI - 1.1, Math.PI - .2); tctx.stroke();
+  tctx.beginPath(); tctx.arc(.18 * u, -.31 * u, .08 * u, Math.PI - 1.1, Math.PI - .2); tctx.stroke();
+
+  tctx.restore();
+}
+
+/* ตัวละครหลัก: สลับการวาดตามสกิน และรองรับ targetCtx (ทั้ง Game Canvas และ Preview Canvas) */
+function drawDuck(p, tilt = 0, h = 0, targetCtx = ctx, skinOverride = null, time = (S ? S.t : 0)){
+  const skin = skinOverride || currentSkin;
+  if(skin === 'shark'){
+    drawSharkModel(targetCtx, p, tilt, h, time);
+  } else {
+    drawDuckModel(targetCtx, p, tilt, h, time);
+  }
 }
 
 /* คนบนห่วงยาง (Inner-tube Character - ปรับตามรูปต้นแบบ Reference Image เป๊ะ) */
@@ -3495,10 +3838,15 @@ function render(al,fd){
     drawGeoWarnText('▲ ▲ ▲ ขึ้นฟรี (อมตะ) ▲ ▲ ▲', warnX, warnY + 9, '900 11px Mali,sans-serif', '#bbf7d0', null, 0);
     ctx.restore();
   }
+  const isRunning = (s.state === 'RUN');
   if($('#btn-settings')){
-    const showBtn = (s.state === 'RUN');
-    if($('#btn-settings').hidden === showBtn){
-      $('#btn-settings').hidden = !showBtn;
+    if($('#btn-settings').hidden === isRunning){
+      $('#btn-settings').hidden = !isRunning;
+    }
+  }
+  if($('#btn-skin')){
+    if($('#btn-skin').hidden === isRunning){
+      $('#btn-skin').hidden = !isRunning;
     }
   }
   if($('#bp')){
@@ -3530,5 +3878,5 @@ function frame(ms){
   render(S.state==='RUN'?acc/FIXED:1,(S.state==='PAUSED'||S.state==='COUNTDOWN')?0:fd);
   requestAnimationFrame(frame);
 }
-newGame();showMenu();resize();requestAnimationFrame(frame);
+newGame();showMenu();updateHighScoreUI();updateSkinDisplay();resize();requestAnimationFrame(frame);
 })();

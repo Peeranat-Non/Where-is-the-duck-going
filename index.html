@@ -17,6 +17,7 @@
     <div><span class="big" id="hs">0</span><small id="hd">0 ม.</small><small id="hz"></small><span id="ht-badge" class="test-badge" hidden>🛡️ โหมดทดสอบ</span></div>
     <div class="r"><span class="big" id="hc"></span><small id="hr">ช่วยแล้ว 0 คน</small></div>
   </div>
+  <button id="btn-skin" class="btn-skin" hidden>👕 สกิน</button>
   <button id="btn-settings" class="btn-settings" hidden>⚙️ ตั้งค่า</button>
   <div id="settings-menu" class="settings-modal" hidden>
     <div class="card settings-card">
@@ -27,6 +28,19 @@
       <button class="mb" id="sm-hitbox">🎯 เปิด/ปิดฮิตบ็อกซ์: ปิด</button>
       <button class="mb" id="sm-test">🛡️ โหมดทดสอบ: ปิด ⚪</button>
       <button class="mb" id="sm-menu">🏠 กลับหน้าหลัก</button>
+    </div>
+  </div>
+  <div id="skin-modal" class="settings-modal" hidden>
+    <div class="card skin-card">
+      <div class="skin-carousel">
+        <button class="skin-arrow" id="skin-prev" aria-label="สกินก่อนหน้า">◀</button>
+        <div class="skin-preview-wrap">
+          <canvas id="skin-preview-canvas" width="150" height="150"></canvas>
+          <div class="skin-name-display" id="skin-name-display">เป็ดไปไหนวะ</div>
+        </div>
+        <button class="skin-arrow" id="skin-next" aria-label="สกินถัดไป">▶</button>
+      </div>
+      <button class="mb" id="skin-action-btn">เลือกใช้งาน</button>
     </div>
   </div>
   <div id="cd" hidden>
@@ -48,12 +62,43 @@
       <div class="fl"><span>🛶</span><span>🏠</span><span>🦆</span><span>🏠</span><span>🛶</span></div>
       <div class="wv"></div>
     </div>
+    <div class="best-badge" id="mm-best">🏆 สถิติสูงสุด: <span id="mm-best-val">0</span> คะแนน</div>
     <button class="mb" id="ms">▶ เริ่มเกม</button>
     <button class="mb" id="mso">เสียง: เปิด 🔊</button>
     <button class="mb" id="mt">🛡️ โหมดทดสอบ: ปิด ⚪</button>
     <button class="mb" id="mr" disabled>⏵ เล่นต่อ</button>
     <button class="mb" id="mh">วิธีเล่น</button>
-    <div class="card" id="hw" hidden><h1>วิธีเล่น</h1><p>พาเป็ดหลบสิ่งกีดขวางกลางถนนน้ำท่วม แล้วสะบัดเชือกให้ห่วงยางพุ่งไปชนคนจมน้ำ</p><p class="hint">← → เปลี่ยนเลน · ↑ หรือ Space กระโดด · P/Esc หยุด (มือถือ: ปัดซ้าย/ขวา ปัดขึ้นหรือแตะเพื่อกระโดด)<br>เขียว = ช่วยเลย · วงแดง = อันตราย · ขอนไม้ลูกศรชมพู = กระโดดข้าม · ม้า/เรือ = หลบเลน</p><button id="hx">ปิด</button></div>
+    <div class="card how-to-play-card" id="hw" hidden>
+      <h1>🌊 วิธีการเล่น</h1>
+      <div class="how-to-scroll">
+        <div class="hw-section">
+          <h3>🎯 ภารกิจกู้ภัยน้ำท่วม</h3>
+          <p>พาเป็ดซิ่งแหวกกระแสน้ำท่วมกรุงเทพฯ หลบหลีกสิ่งกีดขวาง และสะบัดเชือกเหวี่ยงห่วงยางเข้าช่วยผู้ประสบภัยเพื่อสะสมคอมโบและคะแนนสูงสุด!</p>
+        </div>
+        <div class="hw-section">
+          <h3>🎮 การควบคุม (Controls)</h3>
+          <ul>
+            <li><b>⬅️ ➡️ หรือ A / D:</b> สลับเปลี่ยนเลนหลบภัย (บนมือถือ: ปัดซ้าย / ปัดขวา)</li>
+            <li><b>⬆️ หรือ Spacebar / W:</b> กระโดดข้ามสิ่งกีดขวาง (บนมือถือ: ปัดขึ้น หรือแตะหน้าจอ)</li>
+            <li><b>⚙️ หรือ P / Esc:</b> หยุดเกมชั่วคราวและเปิดเมนูตั้งค่า</li>
+          </ul>
+        </div>
+        <div class="hw-section">
+          <h3>⚠️ สิ่งกีดขวางและไอเทมพิเศษ</h3>
+          <ul>
+            <li>🪵 <b>ขอนไม้กั้นน้ำ:</b> สิ่งกีดขวางเตี้ย ต้องกระโดดข้ามเท่านั้น</li>
+            <li>🚤 🐴 🛺 <b>เรือซิ่ง / ม้า / ตุ๊กๆ:</b> อันตรายมาก ชนแล้วจบเกมทันที ต้องเปลี่ยนเลนหลบ</li>
+            <li>🚕 <b>แท็กซี่เขียวเหลือง:</b> พุ่งชนเพื่อขึ้นรถรับบัฟอมตะ วิ่งทะลุสิ่งกีดขวางฟรีชั่วคราว!</li>
+            <li>🛟 <b>ผู้ประสบภัย (วงเขียว):</b> สะบัดห่วงยางไปโดนเพื่อช่วยชีวิต สะสมผู้โดยสารและคอมโบ</li>
+          </ul>
+        </div>
+        <div class="hw-warning">
+          <p><b>⚠️ ข้อควรทราบสำคัญเรื่องข้อมูล (Data Persistence):</b><br>
+          สถิติคะแนนสูงสุด (High Score) และสกินที่เลือก จะถูกบันทึกไว้ใน Browser Local Storage ของเครื่องคุณเท่านั้น หากเข้าเล่นด้วย <b>โหมดไม่ระบุตัวตน (Incognito / Private Mode)</b> หรือทำการล้างแคช/ข้อมูลเบราว์เซอร์ ข้อมูลสถิติและสกินจะสูญหายอย่างถาวร</p>
+        </div>
+      </div>
+      <button id="hx" class="mb">เข้าใจแล้ว ปิดหน้าต่าง</button>
+    </div>
   </div>
 </div>
 <script src="game.js?v=4.1"></script>
