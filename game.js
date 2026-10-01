@@ -17,7 +17,7 @@ const DUCK={omega:16,zeta:.5};
 const JUMP={v0:9.5,g:26};
 const RESCUE={radius:.5};
 const VIC_MSGS=['ช่วยด้วย','รวยไม่ไหวแล้ว!'];
-const LANE=[-2,0,2],CAM={z:8,y:2.4},BANK=4.4,SPEEDBOAT_RZ=22;
+const LANE=[-2.2,0,2.2],CAM={z:8,y:2.4},BANK=4.4,SPEEDBOAT_RZ=22;
 let S,camX=0,dbg=false,testMode=false,best=0;
 
 try{best=+localStorage.getItem('duckBest')||0}catch(e){}
@@ -48,7 +48,9 @@ const AUDIO_PATHS={
   countdown:'assets/sfx_countdown.mp3',
   go:'assets/sfx_go.mp3',
   speedboat_warn:'assets/sfx_speedboat_warn.mp3',
-  horse_run:'assets/sfx_horse_run.mp3'
+  horse_run:'assets/sfx_horse_run.mp3',
+  tuktuk_warn:'assets/sfx_tuktuk_warn.mp3',
+  tuktuk_horn:'assets/sfx_tuktuk_horn.mp3'
 };
 
 class SoundManager{
@@ -134,6 +136,34 @@ class SoundManager{
       gain.gain.setValueAtTime(.32,now);
       gain.gain.exponentialRampToValueAtTime(.001,now+.13);
       osc.start(now);osc.stop(now+.13);
+    }else if(t==='tuktuk_warn'){
+      // สัญญาณเตือนภัยรถตุ๊กๆ ซิ่งมาจากด้านหลัง (Double Rapid Warning Beep)
+      osc.type='square';
+      osc.frequency.setValueAtTime(880,now);
+      osc.frequency.setValueAtTime(1174,now+.08);
+      osc.frequency.setValueAtTime(880,now+.16);
+      osc.frequency.setValueAtTime(1174,now+.24);
+      gain.gain.setValueAtTime(.22,now);
+      gain.gain.exponentialRampToValueAtTime(.001,now+.36);
+      osc.start(now);osc.stop(now+.36);
+    }else if(t==='tuktuk_horn'){
+      // เสียงแตรรถตุ๊กๆ ไทยแท้ 2 โทนสูง "แป๊นๆ!" (Dual-tone Thai Tuk-Tuk Horn)
+      const osc2=ctx.createOscillator(),gain2=ctx.createGain();
+      osc2.connect(gain2);gain2.connect(ctx.destination);
+      osc.type='sawtooth';
+      osc.frequency.setValueAtTime(520,now);
+      osc.frequency.setValueAtTime(0,now+.09);
+      osc.frequency.setValueAtTime(520,now+.12);
+      osc2.type='sawtooth';
+      osc2.frequency.setValueAtTime(660,now);
+      osc2.frequency.setValueAtTime(0,now+.09);
+      osc2.frequency.setValueAtTime(660,now+.12);
+      gain.gain.setValueAtTime(.24,now);
+      gain.gain.exponentialRampToValueAtTime(.001,now+.32);
+      gain2.gain.setValueAtTime(.24,now);
+      gain2.gain.exponentialRampToValueAtTime(.001,now+.32);
+      osc.start(now);osc.stop(now+.32);
+      osc2.start(now);osc2.stop(now+.32);
     }
   }
 }
@@ -281,6 +311,7 @@ function spawnSplash(x,y,z,count=6,power=1.5,dirX=0){
 /* ---------- ระบบเฟสพิเศษ (Special Event Phase / Wave System) ---------- */
 const PHASES = {
   NORMAL: 'NORMAL',
+  TRANSITION_BUFFER: 'TRANSITION_BUFFER',
   HORSE_STAMPEDE: 'HORSE_STAMPEDE',
   SPEEDBOAT_RUSH: 'SPEEDBOAT_RUSH',
   RESCUE_MISSION: 'RESCUE_MISSION',
@@ -297,6 +328,10 @@ const SPECIAL_PHASE_LIST = [
 const PHASE_INFO = {
   [PHASES.NORMAL]: {
     name: 'ปกติ',
+    banner: null
+  },
+  [PHASES.TRANSITION_BUFFER]: {
+    name: 'เตรียมพร้อม...',
     banner: null
   },
   [PHASES.HORSE_STAMPEDE]: {
@@ -326,35 +361,88 @@ const PHASE_INFO = {
 };
 
 function selectNextPhase(lastPhase){
-  // สุ่มเลือก 1 ใน 4 เฟสพิเศษโดยให้ทุกเฟสมีโอกาสเกิดเท่ากัน 100% (แก้บั๊ก Log Hurdles หาย)
+  // สุ่มเลือก 1 ใน 4 เฟสพิเศษโดยให้ทุกเฟสมีโอกาสเกิดเท่ากัน 100%
   // พร้อมตัดเฟสล่าสุดออกเพื่อป้องกันการสุ่มเจอเฟสเดิมซ้ำ 2 รอบติด
   const candidates = SPECIAL_PHASE_LIST.filter(p => p !== lastPhase);
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
+// 1. ระบบตรวจจับเลนที่มีสิ่งกีดขวางทับซ้อน (Safe Lane Checker - Always One Safe Lane Guarantee)
+// ตรวจสอบทั้งมิติระยะทางแกน Z (Spatial) และมิติเวลาที่วัตถุจะวิ่งมาถึงตัวผู้เล่น (Temporal Arrival Time)
+function getOccupiedLanesAt(targetZ, targetRz = 0, safetyDist = 8.5, safetyTime = 0.70, s = S){
+  const occupied = [false, false, false];
+  const targetSpeed = Math.max(1, s.v + (targetRz || 0));
+  const targetTime = (0 - targetZ) / targetSpeed;
+
+  for(let i = 0; i < s.obs.length; i++){
+    const o = s.obs[i];
+    if(o.z > 10) continue; // ข้ามสิ่งกีดขวางที่วิ่งเลยหลังผู้เล่นไปแล้ว
+
+    const oSpeed = Math.max(1, s.v + (o.rz || 0));
+    const oTime = (0 - o.z) / oSpeed;
+    const distDiff = Math.abs(o.z - targetZ);
+    const timeDiff = Math.abs(oTime - targetTime);
+
+    // หากระยะทางห่างกันน้อยกว่า safetyDist หรือเวลาที่จะมาถึงผู้เล่นห่างกันน้อยกว่า safetyTime
+    if(distDiff < safetyDist || timeDiff < safetyTime){
+      if((o.hw || 0) >= 2.5){
+        // ขอนไม้ยาว 3 เลน (Wide log)
+        occupied[0] = true;
+        occupied[1] = true;
+        occupied[2] = true;
+      } else {
+        for(let l = 0; l < 3; l++){
+          if(Math.abs(o.x - LANE[l]) < ((o.hw || 0.48) + 0.45)){
+            occupied[l] = true;
+          }
+        }
+      }
+    }
+  }
+
+  // รวมเลนที่รถตุ๊กๆ กำลังเตือนภัยเตรียมพุ่งมาด้วย
+  if(s.tuktukWarn && s.tuktukWarn.lane !== undefined){
+    occupied[s.tuktukWarn.lane] = true;
+  }
+
+  return occupied;
+}
+
+// 2. ระบบจัดการสถานะเฟส (Phase State Manager พร้อม TRANSITION_BUFFER หยุดสปอว์นเคลียร์ถนน)
 function updatePhase(s){
   if(s.phase === PHASES.NORMAL){
-    // เข้มงวด: ต้องพ้น Cooldown 60 วินาทีเต็มหลังจบเฟสพิเศษก่อนหน้า จึงจะเริ่มเฟสใหม่ได้
+    // ครบกำหนดคูลดาวน์ 60 วินาที ให้เข้าสู่สถานะ TRANSITION_BUFFER ก่อน 1.4 วินาที
     if(s.t >= (s.specialCooldownUntil || 0)){
       const chosen = selectNextPhase(s.lastSpecialPhase);
-      s.phase = chosen;
-      s.lastSpecialPhase = chosen;
-      s.phaseEndDist = s.dist + PHASE_INFO[chosen].durDist;
+      s.phase = PHASES.TRANSITION_BUFFER;
+      s.pendingSpecialPhase = chosen;
+      s.transitionUntil = s.t + 1.4; // พักหยุดสปอว์น 1.4 วินาทีเพื่อเคลียร์สิ่งกีดขวางเดิมให้หมดถนน
       
-      fx(PHASE_INFO[chosen].banner, PHASE_INFO[chosen].col);
+      // ส่งสัญญาณแจ้งเตือนล่วงหน้าให้ผู้เล่นเตรียมตัวระหว่างที่ถนนกำลังเคลียร์โล่ง
+      fx('⚠️ เตรียมพร้อม! ' + PHASE_INFO[chosen].banner, PHASE_INFO[chosen].col);
       if(chosen === PHASES.HORSE_STAMPEDE) sfx.play('horse_run');
       else if(chosen === PHASES.SPEEDBOAT_RUSH) sfx.play('speedboat_warn');
       else if(chosen === PHASES.RESCUE_MISSION) sfx.play('rescue');
       else if(chosen === PHASES.LOG_HURDLES) sfx.play('jump');
 
-      // เว้นระยะปลอดภัยล่วงหน้าก่อนที่ระลอกพิเศษจะมาถึง
-      s.gap = Math.max(s.gap, 18);
+      // ล็อกระยะ gap ไม่ให้มีวัตถุใดๆ เกิดขึ้นมาทับซ้อน
+      s.gap = Math.max(s.gap, s.v * 1.5 + 16);
+    }
+  } else if(s.phase === PHASES.TRANSITION_BUFFER){
+    // อยู่ในสถานะหยุดสปอว์นชั่วคราว รอจนครบเวลา 1.4 วินาทีให้ถนนเคลียร์โล่ง 100%
+    if(s.t >= (s.transitionUntil || 0)){
+      const chosen = s.pendingSpecialPhase;
+      s.phase = chosen;
+      s.lastSpecialPhase = chosen;
+      s.phaseEndDist = s.dist + PHASE_INFO[chosen].durDist;
+      s.pendingSpecialPhase = null;
+      s.gap = Math.max(s.gap, 8);
     }
   } else {
+    // อยู่ในเฟสพิเศษ เมื่อวิ่งครบระยะทางให้กลับสู่สภาวะปกติ
     if(s.dist >= s.phaseEndDist){
       s.phase = PHASES.NORMAL;
-      // กำหนด Strict 60-Second Cooldown: ในช่วง 60 วินาทีนี้จะมีเพียง NORMAL_PHASE เท่านั้น
-      s.specialCooldownUntil = s.t + 60.0;
+      s.specialCooldownUntil = s.t + 60.0; // พัก 60 วินาทีเต็มใน NORMAL_PHASE
       fx('เข้าสู่สภาวะปกติ (พัก 60 วิ)', '#3bd4ff');
       s.gap = Math.max(s.gap, 16);
     }
@@ -364,65 +452,95 @@ function updatePhase(s){
 function newGame(){
   S={state:'MENU',tuns:[],tunEnd:0,tun:0,zt:0,dist:0,v:10,score:0,combo:0,rescued:0,pass:0,gap:10,grace:0,slow:0,shake:0,t:0,fx:[],obs:[],vic:[],wakes:[],splashes:[],lastDuckWake:0,lastTubeWake:0,
     duck:{x:0,px:0,vx:0,lane:1,r:.46},tube:{x:0,px:0,z:2.6,pz:2.6,vx:0,vz:0,r:.75,T:0},jump:{y:0,py:0,vy:0,air:false},
-    phase:PHASES.NORMAL,phaseEndDist:0,specialCooldownUntil:35,lastSpecialPhase:null};
+    phase:PHASES.NORMAL,phaseEndDist:0,specialCooldownUntil:35,lastSpecialPhase:null,
+    pendingSpecialPhase:null,transitionUntil:0,
+    tuktukWarn:null,nextTuktukDist:200};
   input.queue.length=0;input.jumpAt=0;
 }
 function spawn(){
   const s = S, z = -75;
 
+  // 0. ช่วงเปลี่ยนผ่านเฟส (Transition Buffer) - หยุดการสปอว์นทุกชนิด 100% เพื่อเคลียร์ถนนให้โล่งสะอาด
+  if(s.phase === PHASES.TRANSITION_BUFFER){
+    return Math.max(14, s.v * 1.3);
+  }
+
   // 1. เฟสม้าศึกวิ่งเตลิด (Horse Stampede) - ความถี่สูงแต่คงความปลอดภัยขั้นต่ำ
   if(s.phase === PHASES.HORSE_STAMPEDE){
     const dir = Math.random() < 0.5 ? -1 : 1;
-    // ปรับ Hitbox ม้า: กระชับขนาดลำตัวตรงกลาง (hw: 0.48, hd: 0.28, h: 1.8) ไม่ชนหัว/หาง/ขอบข้างเกินจริง
     s.obs.push({npc: 1, type: 'horse', x: -dir * 4, z, hw: 0.48, hd: 0.28, h: 1.8, dir, st: 'wait'});
     sfx.play('horse_run');
-    // Hard Minimum Cap: รับประกันเวลาตอบสนองการสลับเลน (t_dodge >= 0.47s) ไม่ให้ม้าซ้อนกัน
     const minGap = Math.max(12.0, s.v * 0.78 + 2.0);
     return minGap + Math.random() * 2.0;
   }
 
-  // 2. เฟสเรือด่วนคลั่ง (Speedboat Rush) - ความหนาแน่นสูงพร้อม Hard Safety Cap
+  // 2. เฟสเรือด่วนคลั่ง (Speedboat Rush) - ความหนาแน่นสูงพร้อม Safe Lane Checker รับประกันเลนปลอดภัย 100%
   if(s.phase === PHASES.SPEEDBOAT_RUSH){
-    // กฎเหล็ก: ล็อกเลนว่างอย่างน้อย 1 เลนเสมอ ป้องกันกำแพง 3 เลนตัน 100%
-    const freeLane = Math.floor(Math.random() * 3);
-    const rushLanes = [0, 1, 2].filter(l => l !== freeLane);
-    const count = Math.random() < 0.45 ? 2 : 1;
-    for(let i = 0; i < count; i++){
-      // ปรับ Hitbox เรือด่วน: ลดความหนาแกน Z และความกว้าง X (hw: 0.48, hd: 0.38, h: 2.0) หลบข้ามเลนได้ปลอดภัย ไม่โดนคลื่นน้ำชน
-      s.obs.push({npc: 1, type: 'speedboat', x: LANE[rushLanes[i]], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
+    const occupied = getOccupiedLanesAt(-95, SPEEDBOAT_RZ);
+    const freeLanes = [0, 1, 2].filter(l => !occupied[l]);
+
+    // รับประกันว่าต้องเหลือเลนปลอดภัยอย่างน้อย 1 เลนเสมอ
+    if(freeLanes.length <= 1){
+      return Math.max(12.0, (s.v + SPEEDBOAT_RZ) * 0.45);
+    }
+
+    // ล็อกเลนปลอดภัย 1 เลนที่ไม่มีสิ่งกีดขวางเด็ดขาด
+    const safeLaneIndex = Math.floor(Math.random() * freeLanes.length);
+    const safeLane = freeLanes[safeLaneIndex];
+    const availableRushLanes = freeLanes.filter(l => l !== safeLane);
+    
+    const count = (availableRushLanes.length >= 2 && Math.random() < 0.4) ? 2 : 1;
+    for(let i = 0; i < count && i < availableRushLanes.length; i++){
+      s.obs.push({npc: 1, type: 'speedboat', x: LANE[availableRushLanes[i]], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
     }
     sfx.play('speedboat_warn');
-    // Hard Minimum Cap: คำนวณตามความเร็วสัมพัทธ์ (s.v + SPEEDBOAT_RZ) ให้ผู้เล่นมีเวลาหลบเข้าเลนว่างอย่างน้อย ~0.70 วินาทีเสมอ
     const minGap = Math.max(16.0, (s.v + SPEEDBOAT_RZ) * 0.62 + 2.5);
     return minGap + Math.random() * 3.0;
   }
 
   // 3. เฟสกู้ภัยฉุกเฉิน (Rescue Mission) - ถี่ขึ้นแบบคอมโบกระหน่ำ
   if(s.phase === PHASES.RESCUE_MISSION){
-    const l = Math.floor(Math.random() * 3);
+    const occupied = getOccupiedLanesAt(z, 0);
+    const freeLanes = [0, 1, 2].filter(l => !occupied[l]);
+    const l = freeLanes.length > 0 ? freeLanes[Math.floor(Math.random() * freeLanes.length)] : Math.floor(Math.random() * 3);
     s.vic.push({x: LANE[l], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
-    // Hard Minimum Cap: เว้นระยะให้ห่วงยางฟิสิกส์คืนตัวและเหวี่ยงรับคนถัดไปได้ทัน
     const minGap = Math.max(8.0, s.v * 0.52 + 1.5);
     return minGap + Math.random() * 2.0;
   }
 
-  // 4. เฟสวิบากท่อนไม้ (Log Hurdles) - ความถี่สูงแบบ Rhythm Jump พร้อม Hard Minimum Cap ทางคณิตศาสตร์
+  // 4. เฟสวิบากท่อนไม้ (Log Hurdles) - Rhythm Jump พร้อม Safe Lane Checker
   if(s.phase === PHASES.LOG_HURDLES){
-    // ปรับ Hitbox ท่อนไม้: ลดความหนาแกน Z ให้บางเฉียบ (hd = 0.05) และความสูงต่ำ (h = 0.18) กระโดดข้ามพ้นง่าย ไม่ชนอากาศ
+    const occupied = getOccupiedLanesAt(z, 0, 10.0, 0.8);
+    // หากมีสิ่งกีดขวางอื่นอยู่ในระนาบเดียวกัน ห้ามสปอว์นขอนไม้ยาว 3 เลนทับซ้อนเด็ดขาด
+    if(occupied.some(Boolean)){
+      return Math.max(12.0, s.v * 0.7);
+    }
     s.obs.push({x: 0, z, hw: 3.1, hd: 0.05, h: 0.18, type: 'wide'});
-    // Hard Minimum Cap ทางคณิตศาสตร์ (Anti-Impossible Safety Cap):
-    // เวลาลอยตัว t_air = 2 * v0 / g = 2 * 9.5 / 26 ≈ 0.73 วินาที
-    // เวลาตอบสนองและเตรียมกระโดดรอบถัดไป t_prep >= 0.30 วินาที (รวม cycle time >= 1.03 วินาที)
-    // ระยะห่างต่ำสุด = s.v * 1.06 + 2.0 เมตร (ป้องกันการตกกระแทกท่อนไม้ถัดไป 100% ในทุกระดับความเร็ว)
     const minGap = Math.max(16.5, s.v * 1.06 + 2.0);
     return minGap + Math.random() * 2.5;
   }
 
-  // 5. เฟสปกติ (Normal Phase) - การสุ่มแบบผสมตามระยะทางเดิมของเกม
-  const r = Math.random(), d = s.dist, l = Math.floor(Math.random() * 3);
+  // 5. เฟสปกติ (Normal Phase) - การสุ่มพร้อม Safe Lane Checker รับประกันเลนปลอดภัย 100%
+  const r = Math.random(), d = s.dist;
+  const occupied = getOccupiedLanesAt(z, 0);
+  const freeLanes = [0, 1, 2].filter(l => !occupied[l]);
+
+  // หากเลนว่างเหลือเพียง 1 เลน ห้ามสปอว์นสิ่งกีดขวางลงในเลนสุดท้ายเด็ดขาด (ป้องกัน 3 เลนตัน 100%)
+  if(freeLanes.length <= 1){
+    if(freeLanes.length === 1 && Math.random() < 0.45){
+      // สปอว์นคนตกน้ำให้ช่วยได้ปลอดภัย ไม่เป็นอันตรายถึงชีวิต
+      s.vic.push({x: LANE[freeLanes[0]], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
+    }
+    return Math.max(12, s.v * 0.8);
+  }
+
+  // มีเลนว่างอย่างน้อย 2 เลน สามารถสปอว์นสิ่งกีดขวางลงใน 1 เลนได้ โดยรับประกันเหลือเลนปลอดภัยอย่างน้อย 1 เลนเสมอ
+  const chosenLane = freeLanes[Math.floor(Math.random() * freeLanes.length)];
+
   if(r < 0.24){
-    s.vic.push({x: LANE[Math.random() < 0.5 ? 0 : 2], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
-  } else if(r < 0.36){
+    s.vic.push({x: LANE[chosenLane], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
+  } else if(r < 0.36 && freeLanes.length === 3){
+    // ขอนไม้ยาว 3 เลน สปอว์นได้เฉพาะตอนที่ทั้ง 3 เลนว่างโล่ง 100% เท่านั้น
     s.obs.push({x: 0, z, hw: 3.1, hd: 0.05, h: 0.18, type: 'wide'});
     return Math.max(18, s.v * 1.35) + Math.random() * 4;
   } else if(r < 0.48 && d > 150){
@@ -430,15 +548,18 @@ function spawn(){
     s.obs.push({npc: 1, type: 'horse', x: -dir * 4, z, hw: 0.48, hd: 0.28, h: 1.8, dir, st: 'wait'});
     sfx.play('horse_run');
   } else if(r < 0.58 && d > 300){
-    s.obs.push({npc: 1, type: 'speedboat', x: LANE[l], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
-    sfx.play('speedboat_warn');
-    return Math.max(20, (s.v + SPEEDBOAT_RZ) * 0.9) + Math.random() * 4;
+    const boatOccupied = getOccupiedLanesAt(-95, SPEEDBOAT_RZ);
+    const boatFreeLanes = [0, 1, 2].filter(l => !boatOccupied[l]);
+    if(boatFreeLanes.length >= 2){
+      const boatLane = boatFreeLanes[Math.floor(Math.random() * boatFreeLanes.length)];
+      s.obs.push({npc: 1, type: 'speedboat', x: LANE[boatLane], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
+      sfx.play('speedboat_warn');
+      return Math.max(20, (s.v + SPEEDBOAT_RZ) * 0.9) + Math.random() * 4;
+    }
   } else if(r < 0.72){
-    // ปรับ Hitbox เรือแจว (Rowboat): ปรับสัดส่วนให้กระชับปลอดภัย (hw: 0.48, hd: 0.24, h: 0.85)
-    s.obs.push({npc: 1, type: 'rowboat', x: LANE[l], z, hw: 0.48, hd: 0.24, h: 0.85, rz: -2, vx: (Math.random() < 0.5 ? -1 : 1) * 0.5});
+    s.obs.push({npc: 1, type: 'rowboat', x: LANE[chosenLane], z, hw: 0.48, hd: 0.24, h: 0.85, rz: -2, vx: (Math.random() < 0.5 ? -1 : 1) * 0.5});
   } else {
-    const ls = [0, 1, 2].sort(() => Math.random() - 0.5), n = Math.random() < 0.4 ? 2 : 1;
-    for(let i = 0; i < n; i++) s.obs.push({x: LANE[ls[i]], z, hw: 0.60, hd: 0.05, h: 0.18, type: 'log'});
+    s.obs.push({x: LANE[chosenLane], z, hw: 0.60, hd: 0.05, h: 0.18, type: 'log'});
   }
   return Math.max(12, s.v * 0.85) + Math.random() * 4;
 }
@@ -466,6 +587,60 @@ function npcStep(o,s,dt){
     spawnSplash(o.x+(Math.random()-.5)*.5,0,o.z-1.3,3,1.6,(Math.random()-.5)*3.2);
     s.wakes.push({x:o.x-0.35,z:o.z-1.1,r:.45,maxR:2.6,life:0,maxLife:.75,type:'tube',vx:-1.4});
     s.wakes.push({x:o.x+0.35,z:o.z-1.1,r:.45,maxR:2.6,life:0,maxLife:.75,type:'tube',vx:1.4});
+  }else if(o.type==='tuktuk'){
+    // 1. ตรวจจับสิ่งกีดขวางในเลนเดียวกันข้างหน้าอัตโนมัติ (Auto-Jump Proximity Check)
+    // ตรวจสอบเฉพาะสิ่งกีดขวางในเลนเดียวกันที่อยู่ข้างหน้าตามทิศมุ่งสู่ขอบฟ้า (other.z < o.z) อย่างมีประสิทธิภาพ
+    if(!o.jumping && (o.jumpY || 0) <= 0){
+      for(let j = 0; j < s.obs.length; j++){
+        const other = s.obs[j];
+        if(other === o || other.type === 'tuktuk') continue;
+        if(Math.abs(other.x - o.x) < 0.95){
+          const distAhead = o.z - other.z;
+          // ตรวจพบเมื่อเข้าใกล้สิ่งกีดขวางข้างหน้าในระยะ 0.8 ถึง 7.0 เมตร
+          if(distAhead > 0.8 && distAhead < 7.0){
+            o.jumping = true;
+            o.vy = 10.5; // แรงส่งกระโดดลอยตัวข้ามสิ่งกีดขวาง (Y-axis arc jump) สูงโปร่งพ้นทุกสิ่งกีดขวาง
+            sfx.play('jump');
+            break;
+          }
+        }
+      }
+    }
+
+    // 2. ฟิสิกส์การลอยตัวตามวิถีโค้งแกน Y (Y-Axis Jump Arc Physics)
+    if(o.jumping){
+      o.vy -= 26 * dt;
+      o.jumpY = (o.jumpY || 0) + o.vy * dt;
+      if(o.jumpY <= 0){
+        o.jumpY = 0;
+        o.vy = 0;
+        o.jumping = false;
+        // ละอองน้ำแตกกระจายและคลื่นกระแทกผิวน้ำเมื่อล้อทั้งสองแตะพื้นน้ำตอนแลนดิ้ง (Landing Splashes)
+        spawnSplash(o.x - 0.45, 0, o.z, 6, 1.8);
+        spawnSplash(o.x + 0.45, 0, o.z, 6, 1.8);
+        s.wakes.push({x: o.x, z: o.z, r: 0.4, maxR: 2.2, life: 0, maxLife: 0.65, type: 'land'});
+        sfx.play('splash');
+      }
+    }
+
+    // 3. อนุภาคละอองน้ำล้อวิ่งลุยน้ำต่อเนื่อง (Continuous Wheel Sprays)
+    // จะหยุดสร้างละอองน้ำโดยสิ้นเชิงเมื่อรถลอยตัวอยู่กลางอากาศ (o.jumpY > 0.05) ตามกฎเหล็ก
+    if((o.jumpY || 0) <= 0.05){
+      if(Math.random() < 0.65){
+        spawnSplash(o.x - 0.42, 0, o.z + 0.5, 2, 1.4, -0.9);
+        spawnSplash(o.x + 0.42, 0, o.z + 0.5, 2, 1.4, 0.9);
+        s.wakes.push({x: o.x - 0.4, z: o.z + 0.4, r: 0.28, maxR: 1.6, life: 0, maxLife: 0.55, type: 'tube', vx: -1.2});
+        s.wakes.push({x: o.x + 0.4, z: o.z + 0.4, r: 0.28, maxR: 1.6, life: 0, maxLife: 0.55, type: 'tube', vx: 1.2});
+      }
+    }
+
+    // 4. ตรวจจับจังหวะแซงผู้เล่น: กดแตร "แป๊นๆ" และแสดงเอฟเฟกต์ทันทีที่แซงผ่านเป็ด
+    const duckZ = getVisualZ(0);
+    if(!o.honked && o.z <= duckZ + 0.9 && o.z >= duckZ - 3.0){
+      o.honked = true;
+      sfx.play('tuktuk_horn');
+      fx('ซิ่งจี๊ดดด! 🛺💨', '#ffd125');
+    }
   }
 }
 function fx(txt,col){const p=P(S.tube.x,S.tube.z);S.fx.push({txt,x:p.x,y:p.y-p.s*1.2,t:0,col})}
@@ -513,24 +688,88 @@ function step(dt){
   ensureTuns(s);s.tun+=((inTun(s,s.dist)?1:0)-s.tun)*Math.min(1,dt*1.5);
   updatePhase(s);
   s.gap-=dz;if(s.gap<=0){s.gap=Math.max(s.gap,0)+spawn()}
+
+  // ระบบเตือนภัยและสปอว์นรถตุ๊กๆ ซิ่งแซงจากข้างหลัง (Tuk-Tuk Warning & Overtake Spawner)
+  // กฎเหล็ก: เกิดได้เฉพาะใน NORMAL Phase เท่านั้น ห้ามเกิดใน Special Phase ใดๆ เด็ดขาด
+  if(s.tuktukWarn){
+    if(s.phase !== PHASES.NORMAL){
+      s.tuktukWarn = null; // ยกเลิกการเตือนทันทีหากเข้าสู่ Special Phase
+    } else {
+      s.tuktukWarn.timer -= dt;
+      if(s.tuktukWarn.timer <= 0){
+        // สปอว์นรถตุ๊กๆ ที่ขอบล่างของหน้าจอหลังกล้อง (z = 7.2) พุ่งไปข้างหน้าสู่ขอบฟ้า
+        s.obs.push({
+          npc: 1,
+          type: 'tuktuk',
+          x: s.tuktukWarn.x,
+          z: 7.2,
+          hw: 0.62,
+          hd: 0.50,
+          h: 2.2,
+          rz: -(s.v + 15), // วิ่งเร็วกว่าความเร็วโลก 15 ม./วิ เพื่อแซงผู้เล่นไปข้างหน้า
+          jumpY: 0,
+          vy: 0,
+          jumping: false,
+          honked: false
+        });
+        s.tuktukWarn = null;
+      }
+    }
+  } else if(s.phase === PHASES.NORMAL && s.dist >= (s.nextTuktukDist || 200)){
+    const hasTuktuk = s.obs.some(o => o.type === 'tuktuk');
+    if(!hasTuktuk){
+      // ตรวจสอบว่าในระนาบของผู้เล่น มีเลนปลอดภัยเหลืออย่างน้อย 2 เลนหรือไม่ (Always One Safe Lane Guarantee)
+      const playerOccupied = getOccupiedLanesAt(0, 0, 10.0, 0.85);
+      const safeLanes = [0, 1, 2].filter(l => !playerOccupied[l]);
+      if(safeLanes.length >= 2){
+        if(Math.random() < 0.5){
+          const targetLane = safeLanes[Math.floor(Math.random() * safeLanes.length)];
+          s.tuktukWarn = {
+            lane: targetLane,
+            x: LANE[targetLane],
+            timer: 1.3,
+            maxTimer: 1.3
+          };
+          sfx.play('tuktuk_warn');
+          fx('⚠️ ระวังหลัง! ตุ๊กๆ ซิ่งจี๊ด!', '#ff3366');
+          // เพิ่มคูลดาวน์และระยะห่างอย่างมาก: 240 ถึง 400 เมตร (นานๆ โผล่มาที)
+          s.nextTuktukDist = s.dist + 240 + Math.random() * 160;
+        } else {
+          // หากไม่เกิด เลื่อนระยะเช็คถัดไปออกไป 120-180 เมตร
+          s.nextTuktukDist = s.dist + 120 + Math.random() * 60;
+        }
+      } else {
+        s.nextTuktukDist = s.dist + 60;
+      }
+    }
+  }
+
   const jy=s.jump.y;
   // Hitbox ของเป็ดและคนบนห่วงยาง ผูกพิกัดตรงกับตำแหน่งที่วาดภาพบน Canvas แบบ 100% (Hard-Bound Hitbox)
   const hb = getPlayerHitbox(s, 1);
   for(let i=s.obs.length-1;i>=0;i--){
     const o=s.obs[i];o.z+=dz+(o.rz||0)*wd;if(o.npc)npcStep(o,s,wd);
-    if(o.z>14){s.obs.splice(i,1);continue}
+    // การ Despawn สิ่งกีดขวาง:
+    // รถตุ๊กๆ พุ่งไปข้างหน้าสู่ขอบฟ้า (แกน Z ลดลง) Despawn เมื่อลับสายตาหลังขอบฟ้า (o.z < -100)
+    // สิ่งกีดขวางอื่นๆ รวมถึงเรือสปีดโบ๊ท (เกิดที่ z = -75 ถึง -95 แล้ววิ่งเข้าหากล้อง) Despawn เมื่อพ้นหลังกล้อง (o.z > 14)
+    // แก้ไขบั๊ก Speedboat หาย: เดิมทีเช็ค o.z < -85 รวมทุกอย่าง ทำให้เรือสปีดโบ๊ทที่เกิดที่ z = -95 ถูกลบทันทีตั้งแต่เฟรมแรก!
+    if(o.type==='tuktuk'){
+      if(o.z<-100){s.obs.splice(i,1);continue}
+    }else{
+      if(o.z>14){s.obs.splice(i,1);continue}
+    }
     if(o.z<hb.duck.z-6||o.z>hb.tube.z+3)continue;
     // เรือแจว (Rowboat) เป็นสิ่งกีดขวางทรงสูง ไม่สามารถกระโดดข้ามได้ทุกกรณี (Un-jumpable absolute blocker)
     // หากเป็นสิ่งกีดขวางอื่น (เช่น ขอนไม้) และผู้เล่นกระโดดสูงกว่าความสูงสิ่งกีดขวาง (jy >= o.h) ให้ข้ามผ่านได้ปลอดภัย
-    if(o.type!=='rowboat'&&jy>=o.h)continue;
+    if(o.type!=='rowboat'&&o.type!=='tuktuk'&&jy>=o.h)continue;
     if(!testMode){
       // ตรวจจับการชนอิงพิกัดฐานสไปรต์จริงของเป็ด (Hard-bound to bottom-center of Duck sprite)
       if(circleAABB(hb.duck.x,hb.duck.z,hb.duck.r,o)){
-        return die(o.type==='rowboat'?'เป็ดชนเรือแจว (ห้ามกระโดดข้ามเรือแจว)':'เป็ดชนสิ่งกีดขวาง');
+        return die(o.type==='rowboat'?'เป็ดชนเรือแจว (ห้ามกระโดดข้ามเรือแจว)':(o.type==='tuktuk'?'โดนรถตุ๊กๆ ซิ่งจี๊ดชนเข้าเต็มๆ!':'เป็ดชนสิ่งกีดขวาง'));
       }
       // ตรวจจับการชนอิงพิกัดฐานสไปรต์จริงของคนบนห่วงยาง (Hard-bound to bottom-center of Tube sprite)
       if(s.grace<=0&&circleAABB(hb.tube.x,hb.tube.z,hb.tube.r,o)){
-        return die(o.type==='rowboat'?'ห่วงยางชนเรือแจว':'คนบนห่วงยางชนเข้าแล้ว');
+        return die(o.type==='rowboat'?'ห่วงยางชนเรือแจว':(o.type==='tuktuk'?'โดนรถตุ๊กๆ สอยห่วงยางคว่ำ!':'คนบนห่วงยางชนเข้าแล้ว'));
       }
     }
   }
@@ -1198,6 +1437,190 @@ function drawObs(o,z){
     ctx.fillStyle='#ffffff';ctx.fillRect(flX,flY+stripeH*3,flW,stripeH);
     ctx.fillStyle='#ee1c25';ctx.fillRect(flX,flY+stripeH*4,flW,stripeH);
     ctx.lineWidth=Math.max(1,l*.7);ctx.strokeStyle=INK;ctx.strokeRect(flX,flY,flW,flH);
+  }else if(o.type==='tuktuk'){
+    // รถตุ๊กๆ ซิ่งจี๊ด (Thai Tuk-Tuk ตามรูปต้นแบบ Reference Image เป๊ะ)
+    const jumpY = o.jumpY || 0;
+    const bodyY = -jumpY * u;
+    
+    // 1. เงาและระลอกคลื่นน้ำบนผิวน้ำ (Water Shadow stays anchored on water surface even when jumping)
+    const shadowScale = clamp(1 - jumpY * 0.15, 0.45, 1);
+    ctx.fillStyle = `rgba(10,20,50,${0.38 * shadowScale})`;
+    ell(0, 0, 0.88 * u * shadowScale, 0.28 * u * shadowScale);
+    
+    if(jumpY <= 0.05){
+      // คลื่นโฟมน้ำแหวกข้างล้อซ้าย-ขวา
+      ctx.fillStyle = 'rgba(255,255,255,.55)';
+      ell(-.45 * u, .05 * u, .42 * u, .16 * u);
+      ell(.45 * u, .05 * u, .42 * u, .16 * u);
+    }
+    
+    ctx.save();
+    ctx.translate(0, bodyY);
+    
+    // สั่นสะเทือนเครื่องยนต์สองจังหวะเล็กน้อย (Two-stroke engine vibration)
+    const vib = jumpY <= 0.05 ? Math.sin(T * 40) * 0.012 * u : 0;
+    ctx.translate(0, vib);
+    
+    // 2. ล้อหลัง 2 ข้าง (Chunky Rear Tires with Tread)
+    // ล้อซ้าย
+    RR(-.58 * u, -.42 * u, .22 * u, .44 * u, .06 * u, '#18171f', l * 1.1);
+    ctx.strokeStyle = '#2d2b38'; ctx.lineWidth = l * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(-.47 * u, -.36 * u); ctx.lineTo(-.47 * u, -.04 * u);
+    ctx.moveTo(-.52 * u, -.32 * u); ctx.lineTo(-.52 * u, -.08 * u);
+    ctx.moveTo(-.42 * u, -.32 * u); ctx.lineTo(-.42 * u, -.08 * u);
+    ctx.stroke();
+    
+    // ล้อขวา
+    RR(.36 * u, -.42 * u, .22 * u, .44 * u, .06 * u, '#18171f', l * 1.1);
+    ctx.beginPath();
+    ctx.moveTo(.47 * u, -.36 * u); ctx.lineTo(.47 * u, -.04 * u);
+    ctx.moveTo(.42 * u, -.32 * u); ctx.lineTo(.42 * u, -.08 * u);
+    ctx.moveTo(.52 * u, -.32 * u); ctx.lineTo(.52 * u, -.08 * u);
+    ctx.stroke();
+    
+    // ท่อไอเสียคู่ใต้ท้องรถ (Dual Exhaust Pipes)
+    ctx.fillStyle = '#475569';
+    circ(-.22 * u, -.16 * u, .065 * u);
+    circ(.22 * u, -.16 * u, .065 * u);
+    ctx.fillStyle = '#0f172a';
+    circ(-.22 * u, -.16 * u, .035 * u);
+    circ(.22 * u, -.16 * u, .035 * u);
+    
+    // 3. กันชนหลังสีเหลืองทอง (Yellow Rear Bumper)
+    RR(-.62 * u, -.2 * u, 1.24 * u, .09 * u, .035 * u, '#fbbf24', l * 0.9);
+    
+    // 4. ตัวถังส่วนท้ายรถตุ๊กๆ สีน้ำเงินสดใส (Vibrant Royal Blue Tuk-Tuk Body)
+    RR(-.56 * u, -.82 * u, 1.12 * u, .64 * u, .12 * u, '#1259db', l * 1.2);
+    // แถบคาดสีเหลืองและเส้นลายซิ่งสีแดง (Yellow & Red Racing Accent Bands)
+    ctx.fillStyle = '#fbbf24'; ctx.fillRect(-.53 * u, -.48 * u, 1.06 * u, .05 * u);
+    ctx.fillStyle = '#ef4444'; ctx.fillRect(-.42 * u, -.52 * u, .84 * u, .025 * u);
+    // แถบฟ้าอ่อนล่าง
+    ctx.fillStyle = '#38bdf8'; ctx.fillRect(-.53 * u, -.35 * u, 1.06 * u, .05 * u);
+    
+    // 5. ไฟท้ายคู่ ซ้าย-ขวา (Dual Rear Taillights: Amber Top, Red Bottom)
+    // ไฟซ้าย
+    RR(-.53 * u, -.74 * u, .14 * u, .24 * u, .04 * u, '#18181b', l * 0.8);
+    RR(-.51 * u, -.72 * u, .10 * u, .09 * u, .025 * u, '#f59e0b', 0);
+    RR(-.51 * u, -.61 * u, .10 * u, .10 * u, .025 * u, '#dc2626', 0);
+    // ไฟขวา
+    RR(.39 * u, -.74 * u, .14 * u, .24 * u, .04 * u, '#18181b', l * 0.8);
+    RR(.41 * u, -.72 * u, .10 * u, .09 * u, .025 * u, '#f59e0b', 0);
+    RR(.41 * u, -.61 * u, .10 * u, .10 * u, .025 * u, '#dc2626', 0);
+    
+    // 6. ป้ายทะเบียนสีเหลืองเด่นใจกลางรถ "ซิ่งจี๊ด..." (Yellow License Plate)
+    RR(-.32 * u, -.77 * u, .64 * u, .28 * u, .05 * u, '#facc15', l * 1.1);
+    ctx.strokeStyle = '#854d0e'; ctx.lineWidth = l * 0.45;
+    ctx.strokeRect(-.29 * u, -.74 * u, .58 * u, .22 * u);
+    ctx.fillStyle = '#18181b';
+    ctx.font = `900 ${.13 * u}px Mali, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('• ซิ่งจี๊ด... •', 0, -.58 * u);
+    
+    // 7. พนักพิงเบาะและราวจับโครเมียมสแตนเลส (Chrome Railing & Passenger Seat)
+    RR(-.5 * u, -.98 * u, 1.0 * u, .18 * u, .06 * u, '#e2e8f0', l * 1.1);
+    RR(-.44 * u, -.94 * u, .88 * u, .11 * u, .035 * u, '#1e293b', l * 0.7);
+    // ราวจับโค้งด้านหลัง
+    ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = l * 1.3;
+    ctx.beginPath();
+    ctx.moveTo(-.48 * u, -.97 * u); ctx.lineTo(.48 * u, -.97 * u);
+    ctx.stroke();
+    
+    // 8. เสาค้ำหลังคาโครเมียม ซ้าย-ขวา (Chrome Roof Pillars)
+    ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = l * 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-.52 * u, -.98 * u); ctx.lineTo(-.52 * u, -1.45 * u);
+    ctx.moveTo(.52 * u, -.98 * u); ctx.lineTo(.52 * u, -1.45 * u);
+    ctx.stroke();
+    
+    // 9. หลังคาและแผงลำโพงซับวูฟเฟอร์ (Black Canopy Ceiling & Triple Subwoofers)
+    // โครงหลังคาโค้งสีดำ
+    ctx.beginPath();
+    ctx.moveTo(-.62 * u, -1.42 * u);
+    ctx.quadraticCurveTo(0, -1.68 * u, .62 * u, -1.42 * u);
+    ctx.lineTo(.58 * u, -1.18 * u);
+    ctx.quadraticCurveTo(0, -1.35 * u, -.58 * u, -1.18 * u);
+    ctx.closePath();
+    ctx.fillStyle = '#1e1e24'; ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = l * 1.1; ctx.stroke();
+    
+    // ลำโพงซับวูฟเฟอร์ 3 ตัวใต้หลังคา (Triple Sound System Subwoofers)
+    // ลำโพงซ้าย
+    circ(-.28 * u, -1.38 * u, .15 * u);
+    ctx.fillStyle = '#0f172a'; ctx.fill();
+    ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = l * 0.8; ctx.stroke();
+    ctx.fillStyle = '#f59e0b'; circ(-.28 * u, -1.38 * u, .04 * u);
+    
+    // ลำโพงขวา
+    circ(.28 * u, -1.38 * u, .15 * u);
+    ctx.fillStyle = '#0f172a'; ctx.fill();
+    ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = l * 0.8; ctx.stroke();
+    ctx.fillStyle = '#f59e0b'; circ(.28 * u, -1.38 * u, .04 * u);
+    
+    // ทวีตเตอร์เสียงแหลมตรงกลาง
+    circ(0, -1.39 * u, .09 * u);
+    ctx.fillStyle = '#0f172a'; ctx.fill();
+    ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = l * 0.7; ctx.stroke();
+    ctx.fillStyle = '#f59e0b'; circ(0, -1.39 * u, .025 * u);
+    
+    // 10. พวงมาลัยดอกดาวเรือง ดอกมะลิ และพู่แดงห้อยระย้า (Marigold Garland & Tassels)
+    // ฟังก์ชันวาดดอกดาวเรืองสีเหลืองส้ม
+    function flower(fx, fy, fr){
+      ctx.fillStyle = '#fbbf24';
+      for(let a = 0; a < 5; a++){
+        const ang = a * Math.PI * 0.4;
+        circ(fx + Math.cos(ang) * fr * 0.65, fy + Math.sin(ang) * fr * 0.65, fr * 0.55);
+      }
+      ctx.fillStyle = '#f59e0b';
+      circ(fx, fy, fr * 0.5);
+    }
+    
+    // พวงมาลัยพาดใต้หลังคาโค้ง
+    const fRadius = .045 * u;
+    for(let f = -5; f <= 5; f++){
+      const fx = (f / 5) * .42 * u;
+      const fy = -1.23 * u + (Math.abs(f) / 5) * .05 * u;
+      flower(fx, fy, fRadius);
+    }
+    
+    // พวงมาลัยห้อยตามเสาซ้าย
+    for(let k = 0; k < 6; k++){
+      const fy = -1.4 * u + k * .09 * u;
+      flower(-.54 * u, fy, fRadius * 1.05);
+    }
+    // ดอกมะลิขาวและพู่แดงเสาซ้าย
+    ctx.fillStyle = '#f8fafc';
+    circ(-.54 * u, -.84 * u, .04 * u);
+    circ(-.54 * u, -.79 * u, .035 * u);
+    TRI([[-.58*u, -.76*u], [-.50*u, -.76*u], [-.54*u, -.68*u]], '#dc2626', l*0.5);
+    TRI([[-.62*u, -.75*u], [-.54*u, -.75*u], [-.58*u, -.67*u]], '#dc2626', l*0.5);
+    
+    // พวงมาลัยห้อยตามเสาขวา
+    for(let k = 0; k < 6; k++){
+      const fy = -1.4 * u + k * .09 * u;
+      flower(.54 * u, fy, fRadius * 1.05);
+    }
+    // ดอกมะลิขาวและพู่แดงเสาขวา
+    ctx.fillStyle = '#f8fafc';
+    circ(.54 * u, -.84 * u, .04 * u);
+    circ(.54 * u, -.79 * u, .035 * u);
+    TRI([[.50*u, -.76*u], [.58*u, -.76*u], [.54*u, -.68*u]], '#dc2626', l*0.5);
+    TRI([[.54*u, -.75*u], [.62*u, -.75*u], [.58*u, -.67*u]], '#dc2626', l*0.5);
+    
+    // 11. หลังคาดำด้านบนสุดและป้ายไฟแท็กซี่สีส้ม (Outer Black Roof & Amber Roof Light)
+    ctx.beginPath();
+    ctx.moveTo(-.65 * u, -1.44 * u);
+    ctx.quadraticCurveTo(0, -1.74 * u, .65 * u, -1.44 * u);
+    ctx.quadraticCurveTo(0, -1.64 * u, -.65 * u, -1.44 * u);
+    ctx.fillStyle = '#09090b'; ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = l * 1.2; ctx.stroke();
+    
+    // ป้ายไฟสีส้มโค้งมนบนหลังคา (TAXI / Amber Roof Light)
+    RR(-.14 * u, -1.74 * u, .28 * u, .085 * u, .035 * u, '#f59e0b', l * 0.8);
+    ctx.fillStyle = '#fbbf24';
+    RR(-.11 * u, -1.72 * u, .22 * u, .05 * u, .02 * u, '#fde047', 0);
+    
+    ctx.restore();
   }
   ctx.restore();
   if(dbg)dbgBox(o,z);
@@ -2110,6 +2533,20 @@ function mbk(sd,z){ // เอ็มบีเค เซ็นเตอร์ (MBK
     // อัปเดตสถานะอนิเมชันป้ายจอยักษ์แบบ Arcade (3-Frame Cycling Animation)
     const mbkFrame=Math.floor(S.t*.9)%3;
 
+    // ฟังก์ชันจัดกึ่งกลางข้อความเชิงเรขาคณิต (Geometric Centering Method)
+    // บังคับ textAlign = 'left', วัดขนาดจริงด้วย measureText, และคำนวณตำแหน่ง X ด้วยตนเอง (cx - width/2)
+    // ป้องกันบั๊ก WebKit/CoreText ตัวอักษรและวรรณยุกต์ภาษาไทยเลื่อนหลุดกรอบ billboard
+    const drawTextGeo = (str, cx, cy, font, col) => {
+      ctx.save();
+      ctx.font = font;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = col;
+      const tw = ctx.measureText(str).width;
+      ctx.fillText(str, cx - (tw / 2), cy);
+      ctx.restore();
+    };
+
     if(mbkFrame===0){
       // เฟรม 1: โลโก้ MBK CENTER ทางการ พื้นขาว ตัว K สีชมพูมาเจนต้าหางเฉียง
       ctx.fillStyle='#ffffff';
@@ -2118,18 +2555,9 @@ function mbk(sd,z){ // เอ็มบีเค เซ็นเตอร์ (MBK
       ctx.strokeRect(sx,sy,scrW,scrH);
 
       if(pOval.s>4.5){
-        ctx.font=`900 ${scrH*.42}px Mali,sans-serif`;
-        ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillStyle='#1c1f26';
-        ctx.fillText('MB',pOval.x-scrW*.09,pOval.y-scrH*.08);
-
-        // ตัวอักษร K สีชมพูมาเจนต้าหางเฉียง
-        ctx.fillStyle='#d81b60';
-        ctx.fillText('K',pOval.x+scrW*.15,pOval.y-scrH*.08);
-
-        ctx.font=`900 ${scrH*.18}px sans-serif`;
-        ctx.fillStyle='#2b303c';
-        ctx.fillText('CENTER',pOval.x,pOval.y+scrH*.22);
+        drawTextGeo('MB', pOval.x - scrW * 0.09, pOval.y - scrH * 0.08, `900 ${scrH*.42}px Mali,sans-serif`, '#1c1f26');
+        drawTextGeo('K', pOval.x + scrW * 0.15, pOval.y - scrH * 0.08, `900 ${scrH*.42}px Mali,sans-serif`, '#d81b60');
+        drawTextGeo('CENTER', pOval.x, pOval.y + scrH * 0.22, `900 ${scrH*.18}px sans-serif`, '#2b303c');
       }
     }else if(mbkFrame===1){
       // เฟรม 2: จอโฆษณา Cyber Neon Mega Sale สีสันสดใส
@@ -2143,29 +2571,19 @@ function mbk(sd,z){ // เอ็มบีเค เซ็นเตอร์ (MBK
         ctx.fillRect(sx+(bar+.5)*(scrW/8),sy+scrH-bh-scrH*.1,scrW/10,bh);
       }
       if(pOval.s>4.5){
-        ctx.font=`900 ${scrH*.28}px Mali,sans-serif`;
-        ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillStyle='#ffea00';
-        ctx.fillText('MEGA SALE',pOval.x,pOval.y-scrH*.18);
-        ctx.font=`700 ${scrH*.16}px sans-serif`;
-        ctx.fillStyle='#ffffff';
-        ctx.fillText('UP TO 70% OFF',pOval.x,pOval.y+scrH*.2);
+        drawTextGeo('MEGA SALE', pOval.x, pOval.y - scrH * 0.18, `900 ${scrH*.28}px Mali,sans-serif`, '#ffea00');
+        drawTextGeo('UP TO 70% OFF', pOval.x, pOval.y + scrH * 0.2, `700 ${scrH*.16}px sans-serif`, '#ffffff');
       }
     }else{
-      // เฟรม 3: สโลแกนท่องเที่ยวกรุงเทพฯ & ยินดีต้อนรับ
+      // เฟรม 3: สโลแกนท่องเที่ยวกรุงเทพฯ & ยินดีต้อนรับ (พื้นหลังส้ม-ชมพู)
       const gScr=ctx.createLinearGradient(sx,sy,sx+scrW,sy+scrH);
       gScr.addColorStop(0,'#f58220');gScr.addColorStop(1,'#d81b60');
       ctx.fillStyle=gScr;
       ctx.fillRect(sx,sy,scrW,scrH);
 
       if(pOval.s>4.5){
-        ctx.font=`700 ${scrH*.25}px Mali,sans-serif`;
-        ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillStyle='#ffffff';
-        ctx.fillText('ชีวิตดีๆ ที่ MBK',pOval.x,pOval.y-scrH*.1);
-        ctx.font=`900 ${scrH*.16}px sans-serif`;
-        ctx.fillStyle='#ffea00';
-        ctx.fillText('WELCOME TO BANGKOK',pOval.x,pOval.y+scrH*.2);
+        drawTextGeo('ชีวิตดีๆ ที่ MBK', pOval.x, pOval.y - scrH * 0.1, `700 ${scrH*.25}px Mali,sans-serif`, '#ffffff');
+        drawTextGeo('WELCOME TO BANGKOK', pOval.x, pOval.y + scrH * 0.2, `900 ${scrH*.16}px sans-serif`, '#ffea00');
       }
     }
 
@@ -2390,6 +2808,19 @@ function render(al,fd){
   drawWakes(zoff);
   const pl=.5+.5*Math.sin(s.t*10);
   s.obs.forEach(o=>{if(o.type==='speedboat'&&o.z+zoff<-2){const zb=o.z+zoff-1.4;hq(o.x-.85,o.x+.85,3,zb,0,`rgba(255,45,85,${.14+.16*pl})`);poly(P(o.x-.5,zb,0),P(o.x+.5,zb,0),P(o.x+2,zb-5,0),P(o.x-2,zb-5,0),'rgba(255,255,255,.5)')}});
+  if(s.tuktukWarn){
+    const tw=s.tuktukWarn,pulse=.5+.5*Math.sin(s.t*16);
+    hq(tw.x-.85,tw.x+.85,7.2,3.2,0,`rgba(255,30,80,${.28+.28*pulse})`);
+    for(let az=6.8;az>=3.6;az-=1.1){
+      const pA=P(tw.x,az,0);
+      if(pA.d>.8){
+        ctx.fillStyle=`rgba(255,235,59,${.4+.5*pulse})`;
+        ctx.font=`900 ${Math.max(16,pA.s*.45)}px Mali,sans-serif`;
+        ctx.textAlign='center';
+        ctx.fillText('▲',pA.x,pA.y);
+      }
+    }
+  }
   const d=s.duck,t=s.tube;
   const jy=lerp(s.jump.py,s.jump.y,run?al:1);
   const hb = getPlayerHitbox(s, run ? al : 1);
@@ -2414,9 +2845,27 @@ function render(al,fd){
     const f=s.fx[i];f.t+=fd;if(f.t>1.1){s.fx.splice(i,1);continue}
     const y=f.y-f.t*50;ctx.globalAlpha=1-f.t/1.1;ctx.font='700 24px Mali,sans-serif';ctx.textAlign='center';ctx.lineWidth=6;ctx.strokeStyle=INK;ctx.strokeText(f.txt,f.x,y);ctx.fillStyle=f.col;ctx.fillText(f.txt,f.x,y);ctx.globalAlpha=1;
   }
+  if(s.tuktukWarn){
+    const tw=s.tuktukWarn,pulse=.5+.5*Math.sin(s.t*18);
+    const baseP=P(tw.x,7.0,0);
+    const warnX=clamp(baseP.x,85,W-85);
+    const warnY=H-34+Math.sin(s.t*22)*3;
+    ctx.save();
+    ctx.fillStyle=`rgba(225,29,72,${.88+.12*pulse})`;
+    ctx.strokeStyle='#fef08a';ctx.lineWidth=3;
+    ctx.beginPath();ctx.roundRect(warnX-80,warnY-20,160,36,10);ctx.fill();ctx.stroke();
+    ctx.font='900 14px Mali,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle='#ffffff';ctx.shadowColor='rgba(0,0,0,0.6)';ctx.shadowBlur=4;
+    ctx.fillText('⚠️ ตุ๊กๆ ซิ่งจากหลัง!',warnX,warnY-4);
+    ctx.font='900 12px Mali,sans-serif';ctx.fillStyle='#fde047';ctx.fillText('▲ ▲ ▲',warnX,warnY+9);
+    ctx.restore();
+  }
   const bl=s.state==='PAUSED'?'เล่นต่อ':(s.state==='COUNTDOWN'?'เตรียมพร้อม...':'หยุด');if($('#bp').textContent!==bl)$('#bp').textContent=bl;$('#bp').disabled=!(s.state==='RUN'||s.state==='PAUSED'||s.state==='COUNTDOWN');
   const zz=zoneAt(s.dist);let zt='โซน '+(zz+1)+': '+ZN[zz]+' · '+cur.nm;
-  if(s.phase&&s.phase!==PHASES.NORMAL&&PHASE_INFO[s.phase]){zt+=' · ⚡ '+PHASE_INFO[s.phase].name}
+  if(s.phase&&s.phase!==PHASES.NORMAL){
+    const pName = (s.phase===PHASES.TRANSITION_BUFFER&&s.pendingSpecialPhase) ? ('เตรียมพร้อม: '+PHASE_INFO[s.pendingSpecialPhase].name) : (PHASE_INFO[s.phase]?.name || '');
+    if(pName) zt+=' · ⚡ '+pName;
+  }
   if($('#hz').textContent!==zt)$('#hz').textContent=zt;
   $('#hs').textContent=Math.floor(s.score);$('#hd').textContent=Math.floor(s.dist)+' ม. · '+s.v.toFixed(0)+' ม./วิ';
   $('#hc').textContent=s.combo>1?'คอมโบ x'+s.combo:'';$('#hr').textContent='ช่วยแล้ว '+s.rescued+' คน';
