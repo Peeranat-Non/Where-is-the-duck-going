@@ -17,7 +17,7 @@ const DUCK={omega:16,zeta:.5};
 const JUMP={v0:9.5,g:26};
 const RESCUE={radius:.5};
 const VIC_MSGS=['ช่วยด้วย','รวยไม่ไหวแล้ว!'];
-const LANE=[-2.2,0,2.2],CAM={z:8,y:2.4},BANK=4.4,SPEEDBOAT_RZ=22;
+const LANE=[-3.3,0,3.3],OBSTACLE_X=[-2.5,0,2.5],CAM={z:8,y:2.4},BANK=4.4,SPEEDBOAT_RZ=22;
 let S,camX=0,dbg=false,testMode=false,best=0;
 
 try{best=+localStorage.getItem('duckBest')||0}catch(e){}
@@ -392,7 +392,7 @@ function getOccupiedLanesAt(targetZ, targetRz = 0, safetyDist = 8.5, safetyTime 
         occupied[2] = true;
       } else {
         for(let l = 0; l < 3; l++){
-          if(Math.abs(o.x - LANE[l]) < ((o.hw || 0.48) + 0.45)){
+          if(Math.abs(o.x - OBSTACLE_X[l]) < ((o.hw || 0.48) + 0.45)){
             occupied[l] = true;
           }
         }
@@ -436,7 +436,7 @@ function updatePhase(s){
       s.lastSpecialPhase = chosen;
       s.phaseEndDist = s.dist + PHASE_INFO[chosen].durDist;
       s.pendingSpecialPhase = null;
-      s.gap = Math.max(s.gap, 8);
+      s.gap = Math.min(s.gap, 5);
     }
   } else {
     // อยู่ในเฟสพิเศษ เมื่อวิ่งครบระยะทางให้กลับสู่สภาวะปกติ
@@ -465,59 +465,63 @@ function spawn(){
     return Math.max(14, s.v * 1.3);
   }
 
-  // 1. เฟสม้าศึกวิ่งเตลิด (Horse Stampede) - ความถี่สูงแต่คงความปลอดภัยขั้นต่ำ
+  // 1. เฟสม้าศึกวิ่งเตลิด (Horse Stampede) - สปอว์นถี่ขึ้นอย่างดุเดือด พร้อมคงระยะปลอดภัยให้หลบทัน
   if(s.phase === PHASES.HORSE_STAMPEDE){
     const dir = Math.random() < 0.5 ? -1 : 1;
     s.obs.push({npc: 1, type: 'horse', x: -dir * 4, z, hw: 0.48, hd: 0.28, h: 1.8, dir, st: 'wait'});
     sfx.play('horse_run');
-    const minGap = Math.max(12.0, s.v * 0.78 + 2.0);
-    return minGap + Math.random() * 2.0;
+    // Hard Minimum Cap: รับประกันเวลาการสังเกตและสลับเลน/กระโดดขั้นต่ำ >= 0.55s
+    const minGap = Math.max(6.0, s.v * 0.45 + 1.0);
+    return minGap + Math.random() * 1.2;
   }
 
-  // 2. เฟสเรือด่วนคลั่ง (Speedboat Rush) - ความหนาแน่นสูงพร้อม Safe Lane Checker รับประกันเลนปลอดภัย 100%
+  // 2. เฟสเรือด่วนคลั่ง (Speedboat Rush) - ความถี่และความหนาแน่นสูงขึ้น พร้อม Safe Lane Checker รับประกันเลนปลอดภัย 100%
   if(s.phase === PHASES.SPEEDBOAT_RUSH){
     const occupied = getOccupiedLanesAt(-95, SPEEDBOAT_RZ);
     const freeLanes = [0, 1, 2].filter(l => !occupied[l]);
 
     // รับประกันว่าต้องเหลือเลนปลอดภัยอย่างน้อย 1 เลนเสมอ
     if(freeLanes.length <= 1){
-      return Math.max(12.0, (s.v + SPEEDBOAT_RZ) * 0.45);
+      return Math.max(8.0, (s.v + SPEEDBOAT_RZ) * 0.24);
     }
 
-    // ล็อกเลนปลอดภัย 1 เลนที่ไม่มีสิ่งกีดขวางเด็ดขาด
+    // ล็อกเลนปลอดภัย 1 เลนที่ไม่มีสิ่งกีดขวางเด็ดขาด (Safe Lane Guarantee)
     const safeLaneIndex = Math.floor(Math.random() * freeLanes.length);
     const safeLane = freeLanes[safeLaneIndex];
     const availableRushLanes = freeLanes.filter(l => l !== safeLane);
     
-    const count = (availableRushLanes.length >= 2 && Math.random() < 0.4) ? 2 : 1;
+    // เพิ่มโอกาสสปอว์น 2 ลำพร้อมกันให้เข้มข้นขึ้น (65%) เมื่อมีเลนว่างเพียงพอ
+    const count = (availableRushLanes.length >= 2 && Math.random() < 0.65) ? 2 : 1;
     for(let i = 0; i < count && i < availableRushLanes.length; i++){
-      s.obs.push({npc: 1, type: 'speedboat', x: LANE[availableRushLanes[i]], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
+      s.obs.push({npc: 1, type: 'speedboat', x: OBSTACLE_X[availableRushLanes[i]], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
     }
     sfx.play('speedboat_warn');
-    const minGap = Math.max(16.0, (s.v + SPEEDBOAT_RZ) * 0.62 + 2.5);
-    return minGap + Math.random() * 3.0;
+    // Hard Minimum Cap: เว้นระยะสัมพัทธ์ให้ผู้เล่นสังเกตและโยกหลบเข้า Safe Lane ทันเสมอ
+    const minGap = Math.max(11.0, (s.v + SPEEDBOAT_RZ) * 0.34 + 1.2);
+    return minGap + Math.random() * 1.5;
   }
 
-  // 3. เฟสกู้ภัยฉุกเฉิน (Rescue Mission) - ถี่ขึ้นแบบคอมโบกระหน่ำ
+  // 3. เฟสกู้ภัยฉุกเฉิน (Rescue Mission) - ถี่ขึ้นแบบคอมโบกระหน่ำเร้าใจ
   if(s.phase === PHASES.RESCUE_MISSION){
     const occupied = getOccupiedLanesAt(z, 0);
     const freeLanes = [0, 1, 2].filter(l => !occupied[l]);
     const l = freeLanes.length > 0 ? freeLanes[Math.floor(Math.random() * freeLanes.length)] : Math.floor(Math.random() * 3);
-    s.vic.push({x: LANE[l], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
-    const minGap = Math.max(8.0, s.v * 0.52 + 1.5);
-    return minGap + Math.random() * 2.0;
+    s.vic.push({x: OBSTACLE_X[l], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
+    const minGap = Math.max(4.2, s.v * 0.32 + 0.8);
+    return minGap + Math.random() * 1.0;
   }
 
-  // 4. เฟสวิบากท่อนไม้ (Log Hurdles) - Rhythm Jump พร้อม Safe Lane Checker
+  // 4. เฟสวิบากท่อนไม้ (Log Hurdles) - Rhythm Jump ต่อเนื่องเร้าใจ พร้อม Safe Lane Checker
   if(s.phase === PHASES.LOG_HURDLES){
-    const occupied = getOccupiedLanesAt(z, 0, 10.0, 0.8);
+    const occupied = getOccupiedLanesAt(z, 0, 8.5, 0.75);
     // หากมีสิ่งกีดขวางอื่นอยู่ในระนาบเดียวกัน ห้ามสปอว์นขอนไม้ยาว 3 เลนทับซ้อนเด็ดขาด
     if(occupied.some(Boolean)){
-      return Math.max(12.0, s.v * 0.7);
+      return Math.max(8.0, s.v * 0.6);
     }
     s.obs.push({x: 0, z, hw: 3.1, hd: 0.05, h: 0.18, type: 'wide'});
-    const minGap = Math.max(16.5, s.v * 1.06 + 2.0);
-    return minGap + Math.random() * 2.5;
+    // Hard Minimum Cap: คำนวณจากเวลาลอยตัวของการกระโดด (T = 2*v0/g = 0.73s) + จังหวะแตะผิวน้ำก่อนกระโดดซ้ำ
+    const minGap = Math.max(8.8, s.v * 0.76 + 1.0);
+    return minGap + Math.random() * 1.2;
   }
 
   // 5. เฟสปกติ (Normal Phase) - การสุ่มพร้อม Safe Lane Checker รับประกันเลนปลอดภัย 100%
@@ -529,7 +533,7 @@ function spawn(){
   if(freeLanes.length <= 1){
     if(freeLanes.length === 1 && Math.random() < 0.45){
       // สปอว์นคนตกน้ำให้ช่วยได้ปลอดภัย ไม่เป็นอันตรายถึงชีวิต
-      s.vic.push({x: LANE[freeLanes[0]], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
+      s.vic.push({x: OBSTACLE_X[freeLanes[0]], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
     }
     return Math.max(12, s.v * 0.8);
   }
@@ -538,7 +542,7 @@ function spawn(){
   const chosenLane = freeLanes[Math.floor(Math.random() * freeLanes.length)];
 
   if(r < 0.24){
-    s.vic.push({x: LANE[chosenLane], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
+    s.vic.push({x: OBSTACLE_X[chosenLane], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
   } else if(r < 0.36 && freeLanes.length === 3){
     // ขอนไม้ยาว 3 เลน สปอว์นได้เฉพาะตอนที่ทั้ง 3 เลนว่างโล่ง 100% เท่านั้น
     s.obs.push({x: 0, z, hw: 3.1, hd: 0.05, h: 0.18, type: 'wide'});
@@ -552,14 +556,14 @@ function spawn(){
     const boatFreeLanes = [0, 1, 2].filter(l => !boatOccupied[l]);
     if(boatFreeLanes.length >= 2){
       const boatLane = boatFreeLanes[Math.floor(Math.random() * boatFreeLanes.length)];
-      s.obs.push({npc: 1, type: 'speedboat', x: LANE[boatLane], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
+      s.obs.push({npc: 1, type: 'speedboat', x: OBSTACLE_X[boatLane], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
       sfx.play('speedboat_warn');
       return Math.max(20, (s.v + SPEEDBOAT_RZ) * 0.9) + Math.random() * 4;
     }
   } else if(r < 0.72){
-    s.obs.push({npc: 1, type: 'rowboat', x: LANE[chosenLane], z, hw: 0.48, hd: 0.24, h: 0.85, rz: -2, vx: (Math.random() < 0.5 ? -1 : 1) * 0.5});
+    s.obs.push({npc: 1, type: 'rowboat', x: OBSTACLE_X[chosenLane], z, hw: 0.48, hd: 0.24, h: 0.85, rz: -2, vx: (Math.random() < 0.5 ? -1 : 1) * 0.5});
   } else {
-    s.obs.push({x: LANE[chosenLane], z, hw: 0.60, hd: 0.05, h: 0.18, type: 'log'});
+    s.obs.push({x: OBSTACLE_X[chosenLane], z, hw: 0.60, hd: 0.05, h: 0.18, type: 'log'});
   }
   return Math.max(12, s.v * 0.85) + Math.random() * 4;
 }
@@ -726,7 +730,7 @@ function step(dt){
           const targetLane = safeLanes[Math.floor(Math.random() * safeLanes.length)];
           s.tuktukWarn = {
             lane: targetLane,
-            x: LANE[targetLane],
+            x: OBSTACLE_X[targetLane],
             timer: 1.3,
             maxTimer: 1.3
           };
