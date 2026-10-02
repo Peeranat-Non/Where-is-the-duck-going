@@ -3798,9 +3798,12 @@ function drawRestaurant(m,sd,zn,zf,Z,xs,xw,xm,q,lit){
     const signW=Math.min(180,pSign.s*2.2);
     RR(pSign.x-signW/2,pSign.y-pSign.s*.2,signW,pSign.s*.38,3,'#181a20',1);
     ctx.font=`700 ${Math.min(22,pSign.s*.24)}px Mali,sans-serif`;
-    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.textAlign='left';
+    ctx.textBaseline='middle';
     ctx.fillStyle=lit?'#ffd166':'#ffffff';
-    ctx.fillText(name,pSign.x,pSign.y-.02*pSign.s);
+    const textW = ctx.measureText(name).width;
+    const textX = Math.round(pSign.x - (textW / 2));
+    ctx.fillText(name, textX, pSign.y-.02*pSign.s);
     glow(pSign.x,pSign.y,pSign.s*1.2);
   }
 
@@ -3984,9 +3987,14 @@ function bldg(m,sd,zn,zf,Z,par){ // ห้องแถวหลากสไต�
     }
     fq(xs,xw,zn,1.5,2.2,c);
     if(q.s>13){
-      ctx.font=`700 ${q.s*.36}px Mali,sans-serif`;ctx.textAlign='center';ctx.textBaseline='alphabetic';
+      const shopTxt = SG[(m*3+(sd>0?1:0))%SG.length];
+      ctx.font=`700 ${q.s*.36}px Mali,sans-serif`;
+      ctx.textAlign='left';
+      ctx.textBaseline='alphabetic';
       ctx.fillStyle=c==='#ffd166'?'#3a2a00':'#fff';
-      ctx.fillText(SG[(m*3+(sd>0?1:0))%SG.length],q.x,q.y+.12*q.s,Math.abs(xw-xs)*q.s*.9);
+      const textW = ctx.measureText(shopTxt).width;
+      const textX = Math.round(q.x - (textW / 2));
+      ctx.fillText(shopTxt, textX, q.y+.12*q.s, Math.abs(xw-xs)*q.s*.9);
     }
     glow(q.x,q.y,q.s*1.1);
 
@@ -4230,6 +4238,80 @@ function paragon(sd,z){
   const qP=P(mid,z,H+2.3);
   if(qP.s>3)glow(qP.x,qP.y,qP.s*1.8);
 }
+function kmutnb(sd,z){
+  // มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าพระนครเหนือ - อาคาร TGGS (KMUTNB Landmark)
+  // ตั้งอยู่ในเลเยอร์ฉากหลังลึก (Background Layer) ขนาดและสเกลเดียวกับสยามพารากอนเป๊ะ (w=13, H=24, dp=6.5)
+  const xInner=sd*(BANK+6.8),w=13,xOuter=sd*(BANK+6.8+w);
+  const a=Math.min(xInner,xOuter),b=Math.max(xInner,xOuter),H=24,mid=(a+b)/2,dp=6.5;
+
+  // 1. โครงสร้างตึกหลัก (Main Building Block)
+  B(sd,xInner,w,z,dp,0,H,cur.lt>.45?'#f1f5f9':'#1e293b');
+
+  // 2. ปีกกระจกสีเขียวอมฟ้าทั้งสองฝั่ง (Teal Glass Curtain Walls on Left & Right Wings)
+  const wingW = 3.6;
+  const leftA = a + 0.3, leftB = a + 0.3 + wingW;
+  const rightA = b - 0.3 - wingW, rightB = b - 0.3;
+
+  for(let fl = 0; fl < 7; fl++){
+    const y0 = 1.0 + fl * 3.1, y1 = y0 + 2.7;
+    const glassCol = cur.lt > 0.45 ? '#0f766e' : '#0369a1';
+    fq(leftA, leftB, z, y0, y1, glassCol);
+    fq(rightA, rightB, z, y0, y1, glassCol);
+    // แผงกันแดดแนวนอนสีเงิน (Silver Sunshades)
+    fq(leftA, leftB, z, y1 - 0.18, y1, '#e2e8f0');
+    fq(rightA, rightB, z, y1 - 0.18, y1, '#e2e8f0');
+    // เสาซอยกระจกแนวตั้ง (Vertical Mullions)
+    fq(leftA + wingW * 0.5 - 0.08, leftA + wingW * 0.5 + 0.08, z, y0, y1, '#ffffff');
+    fq(rightA + wingW * 0.5 - 0.08, rightA + wingW * 0.5 + 0.08, z, y0, y1, '#ffffff');
+  }
+
+  // 3. ผนังอาคารสีขาวมุกตรงกลาง (Central White Facade Panel - TGGS Front)
+  const cenA = leftB + 0.2, cenB = rightA - 0.2;
+  const cenMid = (cenA + cenB) / 2;
+  fq(cenA, cenB, z, 0.6, H - 0.3, '#ffffff');
+
+  // เส้นคาดแนวตั้งสีชมพูมาเจนต้าและเทา (Iconic Magenta-Pink & Gray TGGS Accent Stripe)
+  const stripeX = cenMid + (cenB - cenA) * 0.22;
+  fq(stripeX - 0.16, stripeX + 0.16, z, 0.8, H - 4.6, '#e11d48');
+  fq(stripeX - 0.30, stripeX - 0.16, z, 0.8, H - 4.6, '#64748b');
+
+  // ครีบระบายอากาศ/ช่องระบายลมแนวนอนบนผนังสีขาว
+  for(let fl = 1; fl < 7; fl++){
+    const ly = 1.0 + fl * 3.1;
+    fq(cenA + 0.4, cenB - 0.4, z, ly, ly + 0.22, '#475569');
+  }
+
+  // 4. หลังคาเพดานยื่นลอยตัวสไตล์โมเดิร์น (Protruding Modern Canopy Roof Slab)
+  fq(a - 0.6, b + 0.6, z + 0.4, H, H + 1.0, '#f8fafc');
+  hq(a - 0.6, b + 0.6, z + 0.4, z - dp - 0.4, H + 1.0, '#cbd5e1');
+
+  // 5. ข้อความตัวอักษร "มจพ." และ "TGGS" ด้วยฟังก์ชันจัดกึ่งกลางเชิงเรขาคณิต (Geometric Centering)
+  const drawGeoBuildingText = (str, cx, cz, cy, fontScale, col) => {
+    const q = P(cx, cz, cy);
+    if(q.s < 3) return;
+    const fSize = Math.max(9, Math.round(q.s * fontScale));
+    ctx.save();
+    ctx.font = `900 ${fSize}px 'Mali', 'Noto Sans Thai', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = col;
+    const tw = ctx.measureText(str).width;
+    const tx = Math.round(q.x - (tw / 2));
+    const ty = Math.round(q.y);
+    ctx.fillText(str, tx, ty);
+    ctx.restore();
+  };
+
+  // ตัวอักษร "มจพ." สีฟ้าเข้ม มจพ. (#0284c7)
+  drawGeoBuildingText('มจพ.', cenMid, z, H - 2.2, 0.56, '#0284c7');
+
+  // ตัวอักษร "TGGS" สีแดง (#dc2626) ใต้ มจพ.
+  drawGeoBuildingText('TGGS', cenMid, z, H - 4.2, 0.48, '#dc2626');
+
+  // เอฟเฟกต์ไฟนีออนส่องสว่างยามค่ำคืน
+  const qSign = P(cenMid, z, H - 2.5);
+  if(qSign.s > 3) glow(qSign.x, qSign.y, qSign.s * 1.8);
+}
 function yao(sd,z){const xc=sd*(BANK+8.2),R='#c81e2b';fq(xc-3.5,xc-2.7,z,0,7,R);fq(xc+2.7,xc+3.5,z,0,7,R);fq(xc-3.7,xc+3.7,z,7,8,'#a01822');fq(xc-3.7,xc+3.7,z,7.9,8.1,'#f2c230');
   poly(P(xc-4.8,z,8.1),P(xc+4.8,z,8.1),P(xc+3.4,z,9.8),P(xc-3.4,z,9.8),'#f2c230');poly(P(xc-4.8,z,8.1),P(xc-5.6,z,9.3),P(xc-3.4,z,9.8),null,'#f2c230');poly(P(xc+4.8,z,8.1),P(xc+5.6,z,9.3),P(xc+3.4,z,9.8),null,'#f2c230');
   fq(xc-1.3,xc+1.3,z,7.1,7.9,INK);txt('เยาวราช',xc,z,7.3,.42,'#ffd166');fq(xc-5.4,xc-4.4,z,2.5,7.5,'#ffd166');fq(xc+4.4,xc+5.4,z,2.5,7.5,'#ffd166');
@@ -4341,8 +4423,8 @@ function mbk(sd,z){ // เอ็มบีเค เซ็นเตอร์ (MBK
   }
 }
 
-const LM=[wat,tower,elephant,victory,mbk,paragon,yao,swing];
-function landmark(m,dist){if(m%14!==7)return;const L=m/14|0,z=dist-m*6-3;if(z>4||z<-93)return;LM[L%8](L&1?1:-1,z)}
+const LM=[wat,tower,elephant,victory,mbk,paragon,kmutnb,yao,swing];
+function landmark(m,dist){if(m%14!==7)return;const L=m/14|0,z=dist-m*6-3;if(z>4||z<-93)return;LM[L%LM.length](L&1?1:-1,z)}
 /* ---------- ทางยกระดับรถไฟฟ้า BTS พาดข้ามถนน (BTS Skytrain Overpass - ทอดยาวเต็มความกว้างจอ) ---------- */
 function drawBtsOverpass(bz,t){
   if(bz>7.5||bz<-85)return;
