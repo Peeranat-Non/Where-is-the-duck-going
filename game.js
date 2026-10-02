@@ -17,11 +17,24 @@ const DUCK={omega:16,zeta:.5};
 const JUMP={v0:9.5,g:26};
 const RESCUE={radius:.5};
 const VIC_MSGS=['ช่วยด้วย','รวยไม่ไหวแล้ว!'];
-const LANE=[-2.2,0,2.2],CAM={z:8,y:2.4},BANK=4.4,SPEEDBOAT_RZ=22;
-let S,camX=0,dbg=false,testMode=false,best=0;
+const LANE=[-3.3,0,3.3],OBSTACLE_X=[-2.5,0,2.5],CAM={z:8,y:2.4},BANK=4.4,SPEEDBOAT_RZ=22;
+let S,camX=0,dbg=false,testMode=false,highScore=0,best=0,bestRescues=0;
+let currentSkin='duck';
 
-try{best=+localStorage.getItem('duckBest')||0}catch(e){}
-$('#bd').onclick=()=>{dbg=!dbg;$('#bd').textContent='Hitbox: '+(dbg?'เปิด':'ปิด')};
+try{
+  highScore=+localStorage.getItem('highScore')||+localStorage.getItem('duckBest')||0;
+  best=highScore;
+  bestRescues=+localStorage.getItem('highRescues')||+localStorage.getItem('bestRescues')||0;
+  currentSkin=localStorage.getItem('currentSkin')||'duck';
+  if(currentSkin==='shark' && highScore < 40000) currentSkin='duck';
+  if(currentSkin==='unicorn' && bestRescues < 300) currentSkin='duck';
+  if(currentSkin==='dog_moto' && highScore < 130000) currentSkin='duck';
+}catch(e){}
+
+function updateHighScoreUI(){
+  if($('#mm-best-val')) $('#mm-best-val').textContent = Math.floor(highScore);
+}
+if($('#bd'))$('#bd').onclick=()=>{dbg=!dbg;$('#bd').textContent='Hitbox: '+(dbg?'เปิด':'ปิด')};
 function setTestMode(val){
   testMode=!!val;
   if($('#bt')){
@@ -31,6 +44,9 @@ function setTestMode(val){
   if($('#mt')){
     $('#mt').textContent='🛡️ โหมดทดสอบ: '+(testMode?'เปิด 🟢':'ปิด ⚪');
     $('#mt').classList.toggle('active-mode',testMode);
+  }
+  if($('#sm-test')){
+    $('#sm-test').textContent='🛡️ โหมดทดสอบ: '+(testMode?'เปิด 🟢':'ปิด ⚪');
   }
   if($('#ht-badge'))$('#ht-badge').hidden=!testMode;
 }
@@ -50,7 +66,9 @@ const AUDIO_PATHS={
   speedboat_warn:'assets/sfx_speedboat_warn.mp3',
   horse_run:'assets/sfx_horse_run.mp3',
   tuktuk_warn:'assets/sfx_tuktuk_warn.mp3',
-  tuktuk_horn:'assets/sfx_tuktuk_horn.mp3'
+  tuktuk_horn:'assets/sfx_tuktuk_horn.mp3',
+  taxi_warn:'assets/sfx_taxi_warn.mp3',
+  taxi_horn:'assets/sfx_taxi_horn.mp3'
 };
 
 class SoundManager{
@@ -68,7 +86,7 @@ class SoundManager{
     if(this.ctx&&this.ctx.state==='suspended')this.ctx.resume();
   }
   play(k){
-    if(!this.enabled||!snd)return;
+    if(!this.enabled||!isSfxEnabled||!snd)return;
     this.init();
     const a=this.pool[k];
     if(a&&a.src){
@@ -164,6 +182,33 @@ class SoundManager{
       gain2.gain.exponentialRampToValueAtTime(.001,now+.32);
       osc.start(now);osc.stop(now+.32);
       osc2.start(now);osc2.stop(now+.32);
+    }else if(t==='taxi_warn'){
+      // สัญญาณเตือนแท็กซี่เขียว-เหลืองใจดี โน้ตเมโลดี้สดใส (Bright Friendly Triple-Chime)
+      osc.type='triangle';
+      osc.frequency.setValueAtTime(523.25,now);
+      osc.frequency.setValueAtTime(659.25,now+.09);
+      osc.frequency.setValueAtTime(783.99,now+.18);
+      gain.gain.setValueAtTime(.25,now);
+      gain.gain.exponentialRampToValueAtTime(.001,now+.38);
+      osc.start(now);osc.stop(now+.38);
+    }else if(t==='taxi_horn'){
+      // เสียงแตรรถแท็กซี่กรุงเทพฯ "ปี๊นๆ!" ทรงพลัง 2 จังหวะ (Dual-Tone Car Horn)
+      const osc2=ctx.createOscillator(),gain2=ctx.createGain();
+      osc2.connect(gain2);gain2.connect(ctx.destination);
+      osc.type='sawtooth';
+      osc.frequency.setValueAtTime(440,now);
+      osc.frequency.setValueAtTime(0,now+.08);
+      osc.frequency.setValueAtTime(440,now+.11);
+      osc2.type='sawtooth';
+      osc2.frequency.setValueAtTime(554.37,now);
+      osc2.frequency.setValueAtTime(0,now+.08);
+      osc2.frequency.setValueAtTime(554.37,now+.11);
+      gain.gain.setValueAtTime(.24,now);
+      gain.gain.exponentialRampToValueAtTime(.001,now+.32);
+      gain2.gain.setValueAtTime(.24,now);
+      gain2.gain.exponentialRampToValueAtTime(.001,now+.32);
+      osc.start(now);osc.stop(now+.32);
+      osc2.start(now);osc2.stop(now+.32);
     }
   }
 }
@@ -175,12 +220,20 @@ class Input{
     this.queue=[];this.ts=null;
     addEventListener('keydown',e=>{
       if(['ArrowLeft','ArrowRight','ArrowUp','Space'].includes(e.code))e.preventDefault();
-      const mv=!$('#mm').hidden;if(mv||!$('#ov').hidden){if(e.code==='Enter'||e.code==='Space'||((e.code==='KeyP'||e.code==='Escape')&&S.state==='PAUSED')){e.preventDefault();$(mv?(S.state==='PAUSED'?'#mr':'#ms'):'#go').click()}return}
+      if($('#hw')&&!$('#hw').hidden){if(e.code==='KeyP'||e.code==='Escape'||e.code==='Enter'||e.code==='Space'){e.preventDefault();closeHowToPlay();return}}
+      if($('#skin-modal')&&!$('#skin-modal').hidden){
+        if(e.code==='ArrowLeft'||e.code==='KeyA'){e.preventDefault();prevSkin();return}
+        if(e.code==='ArrowRight'||e.code==='KeyD'){e.preventDefault();nextSkin();return}
+        if(e.code==='Enter'||e.code==='Space'){e.preventDefault();applyViewedSkin();return}
+        if(e.code==='KeyP'||e.code==='Escape'){e.preventDefault();closeSkinModal();if(S.state==='PAUSED')resume();return}
+      }
+      const isSettingsOpen = ($('#main-menu-settings')&&!$('#main-menu-settings').hidden)||($('#in-game-settings')&&!$('#in-game-settings').hidden)||($('#settings-menu')&&!$('#settings-menu').hidden);
+      const mv=!$('#mm').hidden;if(mv||!$('#ov').hidden||isSettingsOpen){if(e.code==='KeyP'||e.code==='Escape'){e.preventDefault();if(isSettingsOpen){closeSettings();if(S.state==='PAUSED'&&$('#mm').hidden)resume();return}if(S.state==='PAUSED'){resume();return}}if(e.code==='Enter'||e.code==='Space'){e.preventDefault();if(isSettingsOpen)return;$(mv?(S.state==='PAUSED'?'#mr':'#ms'):'#go').click()}return}
       if(e.repeat)return;
       if(e.code==='ArrowLeft'||e.code==='KeyA')this.push(-1);
       if(e.code==='ArrowRight'||e.code==='KeyD')this.push(1);
       if(e.code==='ArrowUp'||e.code==='KeyW'||e.code==='Space')this.jump();
-      if(e.code==='KeyP'||e.code==='Escape'){if(S.state==='RUN'||S.state==='COUNTDOWN')pause();else if(S.state==='PAUSED')resume()}
+      if(e.code==='KeyP'||e.code==='Escape'){if(S.state==='RUN'||S.state==='COUNTDOWN')openSettings();else if(S.state==='PAUSED')resume()}
     });
     el.addEventListener('pointerdown',e=>{this.ts={x:e.clientX,y:e.clientY,t:e.timeStamp,m:false}});
     el.addEventListener('pointermove',e=>{
@@ -338,25 +391,29 @@ const PHASE_INFO = {
     name: 'ม้าศึกวิ่งเตลิด',
     banner: '🐴 ระวัง! ม้าศึกวิ่งเตลิดข้ามคลอง!',
     col: '#ff9234',
-    durDist: 380
+    duration: 25,
+    durDist: 320
   },
   [PHASES.SPEEDBOAT_RUSH]: {
     name: 'เรือด่วนคลั่ง',
     banner: '🚤 อันตราย! ฝูงเรือด่วนพุ่งสวนเลน!',
     col: '#ff3366',
-    durDist: 400
+    duration: 25,
+    durDist: 320
   },
   [PHASES.RESCUE_MISSION]: {
     name: 'กู้ภัยฉุกเฉิน',
     banner: '🏊‍♂️ ภารกิจเร่งด่วน! ช่วยคนตกน้ำ!',
     col: '#39ff14',
-    durDist: 350
+    duration: 25,
+    durDist: 320
   },
   [PHASES.LOG_HURDLES]: {
     name: 'วิบากท่อนไม้',
     banner: '🪵 กระโดดด่วน! ท่อนไม้ขวางลำน้ำ!',
     col: '#ffe11a',
-    durDist: 380
+    duration: 25,
+    durDist: 320
   }
 };
 
@@ -392,7 +449,7 @@ function getOccupiedLanesAt(targetZ, targetRz = 0, safetyDist = 8.5, safetyTime 
         occupied[2] = true;
       } else {
         for(let l = 0; l < 3; l++){
-          if(Math.abs(o.x - LANE[l]) < ((o.hw || 0.48) + 0.45)){
+          if(Math.abs(o.x - OBSTACLE_X[l]) < ((o.hw || 0.48) + 0.45)){
             occupied[l] = true;
           }
         }
@@ -434,13 +491,14 @@ function updatePhase(s){
       const chosen = s.pendingSpecialPhase;
       s.phase = chosen;
       s.lastSpecialPhase = chosen;
-      s.phaseEndDist = s.dist + PHASE_INFO[chosen].durDist;
+      s.phaseEndTime = s.t + (PHASE_INFO[chosen].duration || 25);
+      s.phaseEndDist = s.dist + (PHASE_INFO[chosen].durDist || 320);
       s.pendingSpecialPhase = null;
-      s.gap = Math.max(s.gap, 8);
+      s.gap = Math.min(s.gap, 5);
     }
   } else {
-    // อยู่ในเฟสพิเศษ เมื่อวิ่งครบระยะทางให้กลับสู่สภาวะปกติ
-    if(s.dist >= s.phaseEndDist){
+    // อยู่ในเฟสพิเศษ เมื่อครบกำหนดระยะเวลา 25 วินาที ให้กลับสู่สภาวะปกติ
+    if(s.t >= (s.phaseEndTime || Infinity)){
       s.phase = PHASES.NORMAL;
       s.specialCooldownUntil = s.t + 60.0; // พัก 60 วินาทีเต็มใน NORMAL_PHASE
       fx('เข้าสู่สภาวะปกติ (พัก 60 วิ)', '#3bd4ff');
@@ -452,9 +510,10 @@ function updatePhase(s){
 function newGame(){
   S={state:'MENU',tuns:[],tunEnd:0,tun:0,zt:0,dist:0,v:10,score:0,combo:0,rescued:0,pass:0,gap:10,grace:0,slow:0,shake:0,t:0,fx:[],obs:[],vic:[],wakes:[],splashes:[],lastDuckWake:0,lastTubeWake:0,
     duck:{x:0,px:0,vx:0,lane:1,r:.46},tube:{x:0,px:0,z:2.6,pz:2.6,vx:0,vz:0,r:.75,T:0},jump:{y:0,py:0,vy:0,air:false},
-    phase:PHASES.NORMAL,phaseEndDist:0,specialCooldownUntil:35,lastSpecialPhase:null,
+    phase:PHASES.NORMAL,phaseEndTime:0,phaseEndDist:0,specialCooldownUntil:60,lastSpecialPhase:null,
     pendingSpecialPhase:null,transitionUntil:0,
-    tuktukWarn:null,nextTuktukDist:200};
+    tuktukWarn:null,nextTuktukDist:200,
+    taxiWarn:null,taxiCooldown:120,nextTaxiDist:0,isRidingTaxi:false,taxiTimer:0,taxiLane:1,invincibleTimer:0};
   input.queue.length=0;input.jumpAt=0;
 }
 function spawn(){
@@ -465,59 +524,67 @@ function spawn(){
     return Math.max(14, s.v * 1.3);
   }
 
-  // 1. เฟสม้าศึกวิ่งเตลิด (Horse Stampede) - ความถี่สูงแต่คงความปลอดภัยขั้นต่ำ
+  // 1. เฟสม้าศึกวิ่งเตลิด (Horse Stampede) - สปอว์นถี่ขึ้นอย่างดุเดือด พร้อมคงระยะปลอดภัยให้หลบทัน
   if(s.phase === PHASES.HORSE_STAMPEDE){
     const dir = Math.random() < 0.5 ? -1 : 1;
-    s.obs.push({npc: 1, type: 'horse', x: -dir * 4, z, hw: 0.48, hd: 0.28, h: 1.8, dir, st: 'wait'});
+    // สุ่มความเร็วควบม้าทั้งแนวขวาง (vx: 2.8 ถึง 5.2 ม./วิ) และแนวลึกตามสายน้ำ (vz: -2.2 ถึง 2.2 ม./วิ) เพื่อทำลายการแช่เลนกลาง
+    const horseVx = 2.8 + Math.random() * 2.4;
+    const horseVz = (Math.random() - 0.5) * 4.4;
+    s.obs.push({npc: 1, type: 'horse', x: -dir * 4, z, hw: 0.48, hd: 0.28, h: 1.8, dir, st: 'wait', vx: horseVx, vz: horseVz, rz: horseVz});
     sfx.play('horse_run');
-    const minGap = Math.max(12.0, s.v * 0.78 + 2.0);
-    return minGap + Math.random() * 2.0;
+    // Hard Minimum Cap: รับประกันเวลาการสังเกตและสลับเลน/กระโดดขั้นต่ำ >= 0.48s
+    const minGap = Math.max(5.0, s.v * 0.38 + 0.8);
+    return minGap + Math.random() * 0.9;
   }
 
-  // 2. เฟสเรือด่วนคลั่ง (Speedboat Rush) - ความหนาแน่นสูงพร้อม Safe Lane Checker รับประกันเลนปลอดภัย 100%
+  // 2. เฟสเรือด่วนคลั่ง (Speedboat Rush) - ความถี่และความหนาแน่นสูงขึ้น พร้อม Safe Lane Checker รับประกันเลนปลอดภัย 100%
   if(s.phase === PHASES.SPEEDBOAT_RUSH){
     const occupied = getOccupiedLanesAt(-95, SPEEDBOAT_RZ);
     const freeLanes = [0, 1, 2].filter(l => !occupied[l]);
 
     // รับประกันว่าต้องเหลือเลนปลอดภัยอย่างน้อย 1 เลนเสมอ
     if(freeLanes.length <= 1){
-      return Math.max(12.0, (s.v + SPEEDBOAT_RZ) * 0.45);
+      return Math.max(8.0, (s.v + SPEEDBOAT_RZ) * 0.24);
     }
 
-    // ล็อกเลนปลอดภัย 1 เลนที่ไม่มีสิ่งกีดขวางเด็ดขาด
+    // ล็อกเลนปลอดภัย 1 เลนที่ไม่มีสิ่งกีดขวางเด็ดขาด (Safe Lane Guarantee)
     const safeLaneIndex = Math.floor(Math.random() * freeLanes.length);
     const safeLane = freeLanes[safeLaneIndex];
     const availableRushLanes = freeLanes.filter(l => l !== safeLane);
     
-    const count = (availableRushLanes.length >= 2 && Math.random() < 0.4) ? 2 : 1;
+    // เพิ่มโอกาสสปอว์น 2 ลำพร้อมกันให้เข้มข้นขึ้น (65%) เมื่อมีเลนว่างเพียงพอ
+    const count = (availableRushLanes.length >= 2 && Math.random() < 0.65) ? 2 : 1;
     for(let i = 0; i < count && i < availableRushLanes.length; i++){
-      s.obs.push({npc: 1, type: 'speedboat', x: LANE[availableRushLanes[i]], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
+      s.obs.push({npc: 1, type: 'speedboat', x: OBSTACLE_X[availableRushLanes[i]], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
     }
     sfx.play('speedboat_warn');
-    const minGap = Math.max(16.0, (s.v + SPEEDBOAT_RZ) * 0.62 + 2.5);
-    return minGap + Math.random() * 3.0;
+    // Hard Minimum Cap: เว้นระยะสัมพัทธ์ให้ผู้เล่นสังเกตและโยกหลบเข้า Safe Lane ทันเสมอ
+    const minGap = Math.max(11.0, (s.v + SPEEDBOAT_RZ) * 0.34 + 1.2);
+    return minGap + Math.random() * 1.5;
   }
 
-  // 3. เฟสกู้ภัยฉุกเฉิน (Rescue Mission) - ถี่ขึ้นแบบคอมโบกระหน่ำ
+  // 3. เฟสกู้ภัยฉุกเฉิน (Rescue Mission) - ถี่ขึ้นแบบคอมโบกระหน่ำเร้าใจ
   if(s.phase === PHASES.RESCUE_MISSION){
     const occupied = getOccupiedLanesAt(z, 0);
     const freeLanes = [0, 1, 2].filter(l => !occupied[l]);
     const l = freeLanes.length > 0 ? freeLanes[Math.floor(Math.random() * freeLanes.length)] : Math.floor(Math.random() * 3);
-    s.vic.push({x: LANE[l], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
-    const minGap = Math.max(8.0, s.v * 0.52 + 1.5);
-    return minGap + Math.random() * 2.0;
+    s.vic.push({x: OBSTACLE_X[l], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
+    const minGap = Math.max(4.2, s.v * 0.32 + 0.8);
+    return minGap + Math.random() * 1.0;
   }
 
-  // 4. เฟสวิบากท่อนไม้ (Log Hurdles) - Rhythm Jump พร้อม Safe Lane Checker
+  // 4. เฟสวิบากท่อนไม้ (Log Hurdles) - Rhythm Jump ต่อเนื่องเร้าใจ พร้อม Safe Lane Checker
   if(s.phase === PHASES.LOG_HURDLES){
-    const occupied = getOccupiedLanesAt(z, 0, 10.0, 0.8);
+    const occupied = getOccupiedLanesAt(z, 0, 7.5, 0.73);
     // หากมีสิ่งกีดขวางอื่นอยู่ในระนาบเดียวกัน ห้ามสปอว์นขอนไม้ยาว 3 เลนทับซ้อนเด็ดขาด
     if(occupied.some(Boolean)){
-      return Math.max(12.0, s.v * 0.7);
+      return Math.max(7.2, s.v * 0.74);
     }
     s.obs.push({x: 0, z, hw: 3.1, hd: 0.05, h: 0.18, type: 'wide'});
-    const minGap = Math.max(16.5, s.v * 1.06 + 2.0);
-    return minGap + Math.random() * 2.5;
+    // คำนวณช่องว่างผูกติดกับระยะเวลาลอยตัวของการกระโดดอย่างเคร่งครัด (T = 2*v0/g = 0.7308s)
+    // การันตีว่าผู้เล่นมีเวลาลอยตัวพ้น + จังหวะแตะผิวน้ำและกดกระโดดลูกโซ่ต่อเนื่อง (Chain Jump) ได้ 100%
+    const minGap = Math.max(7.5, s.v * 0.74 + 0.3);
+    return minGap + Math.random() * 0.5;
   }
 
   // 5. เฟสปกติ (Normal Phase) - การสุ่มพร้อม Safe Lane Checker รับประกันเลนปลอดภัย 100%
@@ -529,39 +596,41 @@ function spawn(){
   if(freeLanes.length <= 1){
     if(freeLanes.length === 1 && Math.random() < 0.45){
       // สปอว์นคนตกน้ำให้ช่วยได้ปลอดภัย ไม่เป็นอันตรายถึงชีวิต
-      s.vic.push({x: LANE[freeLanes[0]], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
+      s.vic.push({x: OBSTACLE_X[freeLanes[0]], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
     }
-    return Math.max(12, s.v * 0.8);
+    return Math.max(5.8, s.v * 0.42 + 0.6);
   }
 
   // มีเลนว่างอย่างน้อย 2 เลน สามารถสปอว์นสิ่งกีดขวางลงใน 1 เลนได้ โดยรับประกันเหลือเลนปลอดภัยอย่างน้อย 1 เลนเสมอ
   const chosenLane = freeLanes[Math.floor(Math.random() * freeLanes.length)];
 
   if(r < 0.24){
-    s.vic.push({x: LANE[chosenLane], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
+    s.vic.push({x: OBSTACLE_X[chosenLane], z, ph: Math.random() * 6, gender: Math.random() < 0.5 ? 'girl' : 'boy', txt: VIC_MSGS[Math.random() < 0.5 ? 0 : 1]});
   } else if(r < 0.36 && freeLanes.length === 3){
     // ขอนไม้ยาว 3 เลน สปอว์นได้เฉพาะตอนที่ทั้ง 3 เลนว่างโล่ง 100% เท่านั้น
     s.obs.push({x: 0, z, hw: 3.1, hd: 0.05, h: 0.18, type: 'wide'});
-    return Math.max(18, s.v * 1.35) + Math.random() * 4;
+    return Math.max(8.5, s.v * 0.75 + 0.8) + Math.random() * 1.5;
   } else if(r < 0.48 && d > 150){
     const dir = Math.random() < 0.5 ? -1 : 1;
-    s.obs.push({npc: 1, type: 'horse', x: -dir * 4, z, hw: 0.48, hd: 0.28, h: 1.8, dir, st: 'wait'});
+    const horseVx = 2.8 + Math.random() * 2.4;
+    const horseVz = (Math.random() - 0.5) * 4.4;
+    s.obs.push({npc: 1, type: 'horse', x: -dir * 4, z, hw: 0.48, hd: 0.28, h: 1.8, dir, st: 'wait', vx: horseVx, vz: horseVz, rz: horseVz});
     sfx.play('horse_run');
   } else if(r < 0.58 && d > 300){
     const boatOccupied = getOccupiedLanesAt(-95, SPEEDBOAT_RZ);
     const boatFreeLanes = [0, 1, 2].filter(l => !boatOccupied[l]);
     if(boatFreeLanes.length >= 2){
       const boatLane = boatFreeLanes[Math.floor(Math.random() * boatFreeLanes.length)];
-      s.obs.push({npc: 1, type: 'speedboat', x: LANE[boatLane], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
+      s.obs.push({npc: 1, type: 'speedboat', x: OBSTACLE_X[boatLane], z: -95, hw: 0.48, hd: 0.38, h: 2.0, rz: SPEEDBOAT_RZ});
       sfx.play('speedboat_warn');
-      return Math.max(20, (s.v + SPEEDBOAT_RZ) * 0.9) + Math.random() * 4;
+      return Math.max(11.0, (s.v + SPEEDBOAT_RZ) * 0.42 + 1.2) + Math.random() * 1.8;
     }
   } else if(r < 0.72){
-    s.obs.push({npc: 1, type: 'rowboat', x: LANE[chosenLane], z, hw: 0.48, hd: 0.24, h: 0.85, rz: -2, vx: (Math.random() < 0.5 ? -1 : 1) * 0.5});
+    s.obs.push({npc: 1, type: 'rowboat', x: OBSTACLE_X[chosenLane], z, hw: 0.48, hd: 0.24, h: 0.85, rz: -2, vx: (Math.random() < 0.5 ? -1 : 1) * 0.5});
   } else {
-    s.obs.push({x: LANE[chosenLane], z, hw: 0.60, hd: 0.05, h: 0.18, type: 'log'});
+    s.obs.push({x: OBSTACLE_X[chosenLane], z, hw: 0.60, hd: 0.05, h: 0.18, type: 'log'});
   }
-  return Math.max(12, s.v * 0.85) + Math.random() * 4;
+  return Math.max(5.8, s.v * 0.42 + 0.8) + Math.random() * 1.6;
 }
 function npcStep(o,s,dt){
   if(o.type==='rowboat'){o.x+=o.vx*dt;if(Math.abs(o.x)>2.4){o.x=clamp(o.x,-2.4,2.4);o.vx=-o.vx}}
@@ -571,7 +640,7 @@ function npcStep(o,s,dt){
       sfx.play('horse_run');
     }
     if(o.st==='go'){
-      o.x+=o.dir*3.4*dt;
+      o.x+=o.dir*(o.vx||3.4)*dt;
       // ละอองน้ำกระจายรอบขาม้าขณะวิ่งย่ำน้ำ (Dynamic Water Splashes at horse feet synced to gallop)
       const hoofPulse=Math.abs(Math.sin(S.t*16));
       if(hoofPulse>0.72){
@@ -588,21 +657,54 @@ function npcStep(o,s,dt){
     s.wakes.push({x:o.x-0.35,z:o.z-1.1,r:.45,maxR:2.6,life:0,maxLife:.75,type:'tube',vx:-1.4});
     s.wakes.push({x:o.x+0.35,z:o.z-1.1,r:.45,maxR:2.6,life:0,maxLife:.75,type:'tube',vx:1.4});
   }else if(o.type==='tuktuk'){
-    // 1. ตรวจจับสิ่งกีดขวางในเลนเดียวกันข้างหน้าอัตโนมัติ (Auto-Jump Proximity Check)
-    // ตรวจสอบเฉพาะสิ่งกีดขวางในเลนเดียวกันที่อยู่ข้างหน้าตามทิศมุ่งสู่ขอบฟ้า (other.z < o.z) อย่างมีประสิทธิภาพ
-    if(!o.jumping && (o.jumpY || 0) <= 0){
-      for(let j = 0; j < s.obs.length; j++){
-        const other = s.obs[j];
-        if(other === o || other.type === 'tuktuk') continue;
-        if(Math.abs(other.x - o.x) < 0.95){
-          const distAhead = o.z - other.z;
-          // ตรวจพบเมื่อเข้าใกล้สิ่งกีดขวางข้างหน้าในระยะ 0.8 ถึง 7.0 เมตร
-          if(distAhead > 0.8 && distAhead < 7.0){
-            o.jumping = true;
-            o.vy = 10.5; // แรงส่งกระโดดลอยตัวข้ามสิ่งกีดขวาง (Y-axis arc jump) สูงโปร่งพ้นทุกสิ่งกีดขวาง
-            sfx.play('jump');
-            break;
+    // 1. ตรวจจับสิ่งกีดขวางข้างหน้า: แยกประเภทระหว่าง ท่อนไม้ (Auto-Jump) กับ สิ่งกีดขวางอื่น/คน (Ramming Knockback)
+    for(let j = 0; j < s.obs.length; j++){
+      const other = s.obs[j];
+      if(other === o || other.type === 'tuktuk' || other.isKnockedOut) continue;
+      const halfW = (other.hw || 0.48) + o.hw;
+      if(Math.abs(other.x - o.x) < halfW){
+        const distAhead = o.z - other.z;
+        const isLog = (other.type === 'log' || other.type === 'wide');
+        if(isLog){
+          // Auto-Jump สำหรับท่อนไม้ (รวมขอนไม้ยาว 3 เลน): คำนวณ Z-depth และขนาด bounding box
+          if(!o.jumping && (o.jumpY || 0) <= 0){
+            const triggerDist = 7.5 + (other.hd || 0.1) * 4 + (other.type === 'wide' ? 2.5 : 0);
+            if(distAhead > 0.6 && distAhead < triggerDist){
+              o.jumping = true;
+              o.vy = (other.type === 'wide') ? 13.5 : 11.0; // กระโดดเร็วขึ้น สูงขึ้น และลอยตัวนานขึ้นเพื่อข้ามขอนไม้ยาวได้พ้นสนิท
+              sfx.play('jump');
+            }
           }
+        } else {
+          // Ramming Effect: สำหรับสิ่งกีดขวางอื่นที่ไม่ใช่ท่อนไม้ (Rowboat, Speedboat, Horse) ไม่กระโดด แต่พุ่งชนกระเด็น
+          const ramDist = o.hd + (other.hd || 0.3) + 0.6;
+          if(Math.abs(distAhead) < ramDist){
+            other.isKnockedOut = true;
+            other.vy = 16.0;
+            other.vx = (Math.random() < 0.5 ? -1 : 1) * (7 + Math.random() * 8);
+            other.vz = (Math.random() - 0.5) * 12;
+            sfx.play('hit');
+            fx('ชนกระเด็น! 💥', '#ff3366');
+            spawnSplash(other.x, 0, other.z, 10, 2.2);
+          }
+        }
+      }
+    }
+
+    // Ramming Effect สำหรับคนตกน้ำ (Drowning NPC): พุ่งชนกระเด็น ไม่กระโดด
+    for(let j = 0; j < s.vic.length; j++){
+      const v = s.vic[j];
+      if(v.isKnockedOut) continue;
+      if(Math.abs(v.x - o.x) < (o.hw + 0.5)){
+        const distV = o.z - v.z;
+        if(Math.abs(distV) < (o.hd + 0.65)){
+          v.isKnockedOut = true;
+          v.vy = 16.0;
+          v.vx = (Math.random() < 0.5 ? -1 : 1) * (7 + Math.random() * 8);
+          v.vz = (Math.random() - 0.5) * 12;
+          sfx.play('hit');
+          fx('ปลิวเลย! 💥', '#ff3366');
+          spawnSplash(v.x, 0, v.z, 8, 2.0);
         }
       }
     }
@@ -641,17 +743,127 @@ function npcStep(o,s,dt){
       sfx.play('tuktuk_horn');
       fx('ซิ่งจี๊ดดด! 🛺💨', '#ffd125');
     }
+  }else if(o.type==='taxi'){
+    // รถแท็กซี่เขียว-เหลือง NPC (ขับตามธรรมชาติเมื่อผู้เล่นไม่ได้ขึ้น)
+    // 1. ตรวจจับสิ่งกีดขวางข้างหน้า: ท่อนไม้ (Auto-Jump) กับ สิ่งกีดขวางอื่น (Ramming Knockback)
+    for(let j = 0; j < s.obs.length; j++){
+      const other = s.obs[j];
+      if(other === o || other.type === 'tuktuk' || other.type === 'taxi' || other.isKnockedOut) continue;
+      const halfW = (other.hw || 0.48) + o.hw;
+      if(Math.abs(other.x - o.x) < halfW){
+        const distAhead = o.z - other.z;
+        const isLog = (other.type === 'log' || other.type === 'wide');
+        if(isLog){
+          if(!o.jumping && (o.jumpY || 0) <= 0){
+            const triggerDist = 7.5 + (other.hd || 0.1) * 4 + (other.type === 'wide' ? 2.5 : 0);
+            if(distAhead > 0.6 && distAhead < triggerDist){
+              o.jumping = true;
+              o.vy = (other.type === 'wide') ? 13.5 : 11.0;
+              sfx.play('jump');
+            }
+          }
+        } else {
+          const ramDist = o.hd + (other.hd || 0.3) + 0.6;
+          if(Math.abs(distAhead) < ramDist){
+            other.isKnockedOut = true;
+            other.vy = 16.0;
+            other.vx = (Math.random() < 0.5 ? -1 : 1) * (7 + Math.random() * 8);
+            other.vz = (Math.random() - 0.5) * 12;
+            sfx.play('hit');
+            fx('ชนกระเด็น! 💥', '#ff3366');
+            spawnSplash(other.x, 0, other.z, 10, 2.2);
+          }
+        }
+      }
+    }
+    // ชนคนตกน้ำ (Drowning NPC)
+    for(let j = 0; j < s.vic.length; j++){
+      const v = s.vic[j];
+      if(v.isKnockedOut) continue;
+      if(Math.abs(v.x - o.x) < (o.hw + 0.5)){
+        const distV = o.z - v.z;
+        if(Math.abs(distV) < (o.hd + 0.65)){
+          v.isKnockedOut = true;
+          v.vy = 16.0;
+          v.vx = (Math.random() < 0.5 ? -1 : 1) * (7 + Math.random() * 8);
+          v.vz = (Math.random() - 0.5) * 12;
+          sfx.play('hit');
+          fx('ปลิวเลย! 💥', '#ff3366');
+          spawnSplash(v.x, 0, v.z, 8, 2.0);
+        }
+      }
+    }
+    // ฟิสิกส์การกระโดด
+    if(o.jumping){
+      o.vy -= 26 * dt;
+      o.jumpY = (o.jumpY || 0) + o.vy * dt;
+      if(o.jumpY <= 0){
+        o.jumpY = 0;
+        o.vy = 0;
+        o.jumping = false;
+        spawnSplash(o.x - 0.45, 0, o.z, 6, 1.8);
+        spawnSplash(o.x + 0.45, 0, o.z, 6, 1.8);
+        s.wakes.push({x: o.x, z: o.z, r: 0.4, maxR: 2.2, life: 0, maxLife: 0.65, type: 'land'});
+        sfx.play('splash');
+      }
+    }
+    // อนุภาคละอองน้ำล้อวิ่งลุยน้ำ
+    if((o.jumpY || 0) <= 0.05){
+      if(Math.random() < 0.65){
+        spawnSplash(o.x - 0.42, 0, o.z + 0.5, 2, 1.4, -0.9);
+        spawnSplash(o.x + 0.42, 0, o.z + 0.5, 2, 1.4, 0.9);
+        s.wakes.push({x: o.x - 0.4, z: o.z + 0.4, r: 0.28, maxR: 1.6, life: 0, maxLife: 0.55, type: 'tube', vx: -1.2});
+        s.wakes.push({x: o.x + 0.4, z: o.z + 0.4, r: 0.28, maxR: 1.6, life: 0, maxLife: 0.55, type: 'tube', vx: 1.2});
+      }
+    }
+    // กดแตรเมื่อแซงผู้เล่น
+    const duckZ = getVisualZ(0);
+    if(!o.honked && o.z <= duckZ + 0.9 && o.z >= duckZ - 3.0){
+      o.honked = true;
+      sfx.play('taxi_horn');
+      fx('แท็กซี่แซงฉิว! 🚕💨', '#39ff14');
+    }
   }
 }
 function fx(txt,col){const p=P(S.tube.x,S.tube.z);S.fx.push({txt,x:p.x,y:p.y-p.s*1.2,t:0,col})}
 function step(dt){
   const s=S,wd=dt*(s.slow>0?.35:1);
   if(s.slow>0)s.slow-=dt;if(s.grace>0)s.grace-=dt;if(s.shake>0)s.shake-=dt;
-  s.v=Math.min(22,10+s.dist*.012);
+  if(s.invincibleTimer>0)s.invincibleTimer-=wd;
+  if(s.taxiCooldown>0)s.taxiCooldown-=dt;
+  s.v=Math.min(22,10+s.dist*.012) + (s.isRidingTaxi ? 10 : 0);
   stepDuck(s.duck,wd);stepJump(s,wd);
   s.tube.r=(.75+.03*s.pass)*(1-.08*clamp((s.v-10)/12,0,1));
   stepTube(s.tube,s.duck,s.v,wd);
   const dz=s.v*wd;s.dist+=dz;s.score+=dz*.5;
+
+  // การนับเวลาถอยหลังการนั่งรถแท็กซี่และการลงจากรถ (Disembarking Illusion + 2s Invincibility)
+  if(s.isRidingTaxi){
+    s.taxiTimer -= wd;
+    if(s.taxiTimer <= 0){
+      s.isRidingTaxi = false;
+      s.taxiTimer = 0;
+      s.invincibleTimer = 3.0; // 👈 มอบสถานะอมตะ (I-frames) 3 วินาทีเต็มทันทีที่ลงจากรถ
+      fx('ส่งถึงที่แล้ว! ขอบคุณครับ 🚕💨 (อมตะ 3 วิ)', '#ffe11a');
+      // The Illusion of Leaving: เสกรถ Taxi NPC คันใหม่พุ่งพรวดไปข้างหน้าจากตำแหน่งปัจจุบันของผู้เล่นทันที
+      s.obs.push({
+        npc: 1,
+        type: 'taxi',
+        x: s.duck.x,
+        z: 0,
+        hw: 0.65,
+        hd: 0.55,
+        h: 2.0,
+        rz: -(s.v + 18), // พุ่งแซงไปข้างหน้าอย่างรวดเร็วสู่ขอบฟ้า
+        jumpY: 0,
+        vy: 0,
+        jumping: false,
+        honked: true
+      });
+      sfx.play('taxi_horn');
+      spawnSplash(s.duck.x, 0, 0, 14, 2.2);
+    }
+  }
   if(!s.jump.air&&(s.t-(s.lastDuckWake||0)>.04)){
     s.lastDuckWake=s.t;
     s.wakes.push({x:s.duck.x,z:0,r:.25,maxR:1.6,life:0,maxLife:.62,type:'duck',vx:s.duck.vx});
@@ -712,6 +924,7 @@ function step(dt){
           jumping: false,
           honked: false
         });
+        sfx.play('tuktuk_warn'); // เล่นเสียงเตือนเฉพาะเมื่อรถตุ๊กๆ ได้รับการสปอว์นลงสู่อาร์เรย์จริงแล้ว 100%
         s.tuktukWarn = null;
       }
     }
@@ -726,11 +939,10 @@ function step(dt){
           const targetLane = safeLanes[Math.floor(Math.random() * safeLanes.length)];
           s.tuktukWarn = {
             lane: targetLane,
-            x: LANE[targetLane],
+            x: OBSTACLE_X[targetLane],
             timer: 1.3,
             maxTimer: 1.3
           };
-          sfx.play('tuktuk_warn');
           fx('⚠️ ระวังหลัง! ตุ๊กๆ ซิ่งจี๊ด!', '#ff3366');
           // เพิ่มคูลดาวน์และระยะห่างอย่างมาก: 240 ถึง 400 เมตร (นานๆ โผล่มาที)
           s.nextTuktukDist = s.dist + 240 + Math.random() * 160;
@@ -744,25 +956,124 @@ function step(dt){
     }
   }
 
+  // ระบบสปอว์นรถแท็กซี่เขียว-เหลือง (Taxi Spawner - ยานพาหนะช่วยชีวิตมิตรผู้เล่น)
+  // กฎเหล็ก: เกิดเฉพาะใน NORMAL_PHASE ข้าม Safe Lane Checker 100% (CRITICAL: Bypasses Safe Lane Checker)
+  if(s.taxiWarn){
+    if(s.phase !== PHASES.NORMAL){
+      s.taxiWarn = null;
+    } else {
+      s.taxiWarn.timer -= dt;
+      if(s.taxiWarn.timer <= 0){
+        s.obs.push({
+          npc: 1,
+          type: 'taxi',
+          x: s.taxiWarn.x,
+          z: 7.2,
+          hw: 0.65,
+          hd: 0.55,
+          h: 2.0,
+          rz: -(s.v + 16),
+          jumpY: 0,
+          vy: 0,
+          jumping: false,
+          honked: false
+        });
+        sfx.play('taxi_warn');
+        s.taxiWarn = null;
+      }
+    }
+  } else if(!s.isRidingTaxi && s.phase === PHASES.NORMAL && s.taxiCooldown <= 0){
+    const hasTaxi = s.obs.some(o => o.type === 'taxi');
+    if(!hasTaxi){
+      // สุ่มเลือกเลนที่จะมา โดยข้าม Safe Lane Checker 100% (ไม่ยกเลิกแม้เลนจะเต็ม)
+      // โอกาส 65% เกิดที่เลนเดียวกับเป็ด เพื่อเปิดโอกาสให้ผู้เล่นชนเพื่อขึ้นรถได้ง่าย
+      const targetLane = Math.random() < 0.65 ? s.duck.lane : Math.floor(Math.random() * 3);
+      s.taxiWarn = {
+        lane: targetLane,
+        x: OBSTACLE_X[targetLane],
+        timer: 1.4,
+        maxTimer: 1.4
+      };
+      fx('🚕 แท็กซี่กำลังมา! รอขึ้นเลย!', '#39ff14');
+      s.taxiCooldown = 120.0; // รีเซ็ตคูลดาวน์แท็กซี่ 2 นาทีเต็ม (120 วินาที) ทันที
+    }
+  }
+
   const jy=s.jump.y;
   // Hitbox ของเป็ดและคนบนห่วงยาง ผูกพิกัดตรงกับตำแหน่งที่วาดภาพบน Canvas แบบ 100% (Hard-Bound Hitbox)
   const hb = getPlayerHitbox(s, 1);
   for(let i=s.obs.length-1;i>=0;i--){
-    const o=s.obs[i];o.z+=dz+(o.rz||0)*wd;if(o.npc)npcStep(o,s,wd);
+    const o=s.obs[i];
+    if(o.isKnockedOut){
+      o.y=(o.y||0)+(o.vy||0)*wd;o.vy=(o.vy||0)-26*wd;o.x+=(o.vx||0)*wd;o.z+=dz+(o.vz||0)*wd;
+      o.rot=(o.rot||0)+8*wd;
+      if(o.z>16||o.z<-120||Math.abs(o.x)>20||o.y<-5){s.obs.splice(i,1);continue}
+      continue; // ข้ามการชนกับผู้เล่นโดยสิ้นเชิง (Player ignores knocked-out entities)
+    }
+    o.z+=dz+(o.rz||0)*wd;if(o.npc)npcStep(o,s,wd);
     // การ Despawn สิ่งกีดขวาง:
-    // รถตุ๊กๆ พุ่งไปข้างหน้าสู่ขอบฟ้า (แกน Z ลดลง) Despawn เมื่อลับสายตาหลังขอบฟ้า (o.z < -100)
-    // สิ่งกีดขวางอื่นๆ รวมถึงเรือสปีดโบ๊ท (เกิดที่ z = -75 ถึง -95 แล้ววิ่งเข้าหากล้อง) Despawn เมื่อพ้นหลังกล้อง (o.z > 14)
-    // แก้ไขบั๊ก Speedboat หาย: เดิมทีเช็ค o.z < -85 รวมทุกอย่าง ทำให้เรือสปีดโบ๊ทที่เกิดที่ z = -95 ถูกลบทันทีตั้งแต่เฟรมแรก!
-    if(o.type==='tuktuk'){
+    if(o.type==='tuktuk'||o.type==='taxi'){
       if(o.z<-100){s.obs.splice(i,1);continue}
     }else{
       if(o.z>14){s.obs.splice(i,1);continue}
+    }
+    if(o.isKnockedOut)continue;
+
+    // ตรวจจับการขึ้นแท็กซี่ (Boarding Taxi):
+    if(o.type==='taxi'){
+      if(!s.isRidingTaxi && (circleAABB(hb.duck.x,hb.duck.z,hb.duck.r,o) || (s.grace<=0&&circleAABB(hb.tube.x,hb.tube.z,hb.tube.r,o)))){
+        s.obs.splice(i,1); // ลบ Taxi NPC ออกจากอาร์เรย์
+        // Fix Part A: Snap พิกัดและเลนของผู้เล่นให้ตรงกับเลนของรถแท็กซี่ทันที 100%
+        const taxiLane = (Math.abs(o.x - OBSTACLE_X[0]) < 0.8) ? 0 : ((Math.abs(o.x - OBSTACLE_X[2]) < 0.8) ? 2 : 1);
+        s.duck.lane = taxiLane;
+        s.duck.x = LANE[taxiLane];
+        s.duck.px = LANE[taxiLane];
+        s.duck.vx = 0;
+        s.tube.x = LANE[taxiLane];
+        s.tube.px = LANE[taxiLane];
+        s.tube.vx = 0;
+        s.taxiLane = taxiLane;
+        input.queue.length = 0;
+        s.isRidingTaxi = true;
+        s.taxiTimer = 10.0; // จับเวลา 10 วินาที
+        sfx.play('taxi_horn');
+        fx('ขึ้นแท็กซี่แล้ว! 🚕💨 (10 วิ)', '#39ff14');
+        spawnSplash(s.duck.x, 0, 0, 16, 2.5);
+        continue;
+      }
+      continue; // ถ้ายังไม่ชน หรือวิ่งแซงไป ให้แท็กซี่วิ่งผ่านไปได้ ไม่ทำร้ายผู้เล่น
+    }
+
+    // ขณะที่ผู้เล่นขึ้นแท็กซี่อยู่ (isRidingTaxi): สืบทอดพลังแท็กซี่ (Immune + Auto-jump Log + Ram Others)
+    if(s.isRidingTaxi){
+      if(circleAABB(hb.duck.x,hb.duck.z,hb.duck.r+0.35,o)){
+        const isLog = (o.type==='log'||o.type==='wide');
+        if(isLog){
+          // Auto-Jump ข้ามขอนไม้อัตโนมัติทันที
+          if(!s.jump.air){
+            s.jump.vy = JUMP.v0 * 1.15;
+            s.jump.air = true;
+            sfx.play('jump');
+            spawnSplash(s.duck.x, 0, 0, 10, 2.0);
+          }
+        } else {
+          // ชนสิ่งกีดขวางอื่นกระเด็นปลิวทันที (Ram / Knockback)
+          o.isKnockedOut = true;
+          o.vy = 16.0;
+          o.vx = (Math.random() < 0.5 ? -1 : 1) * (8 + Math.random() * 8);
+          o.vz = (Math.random() - 0.5) * 12;
+          sfx.play('hit');
+          fx('แท็กซี่ชนกระเด็น! 💥', '#ff3366');
+          spawnSplash(o.x, 0, o.z, 14, 2.5);
+        }
+      }
+      continue; // ผู้เล่นเป็นอมตะ ไม่ตายเด็ดขาด!
     }
     if(o.z<hb.duck.z-6||o.z>hb.tube.z+3)continue;
     // เรือแจว (Rowboat) เป็นสิ่งกีดขวางทรงสูง ไม่สามารถกระโดดข้ามได้ทุกกรณี (Un-jumpable absolute blocker)
     // หากเป็นสิ่งกีดขวางอื่น (เช่น ขอนไม้) และผู้เล่นกระโดดสูงกว่าความสูงสิ่งกีดขวาง (jy >= o.h) ให้ข้ามผ่านได้ปลอดภัย
     if(o.type!=='rowboat'&&o.type!=='tuktuk'&&jy>=o.h)continue;
-    if(!testMode){
+    if(!testMode && !(s.invincibleTimer > 0)){
       // ตรวจจับการชนอิงพิกัดฐานสไปรต์จริงของเป็ด (Hard-bound to bottom-center of Duck sprite)
       if(circleAABB(hb.duck.x,hb.duck.z,hb.duck.r,o)){
         return die(o.type==='rowboat'?'เป็ดชนเรือแจว (ห้ามกระโดดข้ามเรือแจว)':(o.type==='tuktuk'?'โดนรถตุ๊กๆ ซิ่งจี๊ดชนเข้าเต็มๆ!':'เป็ดชนสิ่งกีดขวาง'));
@@ -774,7 +1085,14 @@ function step(dt){
     }
   }
   for(let i=s.vic.length-1;i>=0;i--){
-    const v=s.vic[i];v.z+=dz;
+    const v=s.vic[i];
+    if(v.isKnockedOut){
+      v.y=(v.y||0)+(v.vy||0)*wd;v.vy=(v.vy||0)-26*wd;v.x+=(v.vx||0)*wd;v.z+=dz+(v.vz||0)*wd;
+      v.rot=(v.rot||0)+8*wd;
+      if(v.z>16||v.z<-120||Math.abs(v.x)>20||v.y<-5){s.vic.splice(i,1);continue}
+      continue; // ข้ามการตรวจจับช่วยคนของผู้เล่น (Player ignores knocked-out victim)
+    }
+    v.z+=dz;
     // ละอองน้ำและคลื่นน้ำฟุ้งกระจายรอบคนจมน้ำที่กำลังตะเกียกตะกาย (Continuous struggling water splashes)
     if(v.z>-70&&v.z<10){
       if(Math.random()<0.32){
@@ -792,16 +1110,34 @@ function step(dt){
   }
 }
 function die(why){
-  if(testMode)return;
+  if(testMode || (S.invincibleTimer > 0))return;
   sfx.play('hit');
   S.state='OVER';S.shake=.4;
-  if(S.score>best){best=S.score;try{localStorage.setItem('duckBest',Math.floor(best))}catch(e){}}
+  if(S.score>highScore){
+    highScore=Math.floor(S.score);
+    best=highScore;
+    try{
+      localStorage.setItem('highScore',highScore);
+      localStorage.setItem('duckBest',highScore);
+    }catch(e){}
+  }
+  const curRescued = S.rescued || 0;
+  if(curRescued > bestRescues){
+    bestRescues = curRescued;
+    try{
+      localStorage.setItem('bestRescues', bestRescues);
+      localStorage.setItem('highRescues', bestRescues);
+    }catch(e){}
+  }
+  updateHighScoreUI();
+  updateContinueButtonsState();
   overlay('over',why);
 }
 function savePrev(){const s=S;s.jump.py=s.jump.y;s.duck.px=s.duck.x;s.tube.px=s.tube.x;s.tube.pz=s.tube.z}
 
 /* ---------- Overlay / สถานะ ---------- */
-const mm=$('#mm'),hw=$('#hw');let snd=true;
+const mm=$('#mm'),hw=$('#hw');
+let isSfxEnabled=true, isBgmEnabled=true, snd=true;
 let countdownTimer=null;
 const cdEl=$('#cd'),cdnEl=$('#cdn');
 function cancelCountdown(){
@@ -821,13 +1157,56 @@ function showCountdownStep(val,text,isGo){
 function overlay(kind,why){
   cancelCountdown();
   $('#ov').hidden=false;$('#ot').textContent='จบเกม';
-  $('#op').textContent=why+' — ได้ '+Math.floor(S.score)+' คะแนน วิ่งไป '+Math.floor(S.dist)+' ม. ช่วยคนได้ '+S.rescued+' คน (สูงสุด '+Math.floor(best)+')';
-  $('#oh').textContent='ขอนไม้ต้องกระโดดข้าม ส่วนม้าและเรือต้องหลบเลน';
+  const curScore = Math.floor(S.score);
+  const topScore = Math.floor(highScore);
+  const curRescued = S.rescued || 0;
+  const topRescued = bestRescues;
+
+  $('#op').innerHTML = `
+    <div class="go-stats-grid">
+      <div class="go-stat-card">
+        <span class="go-stat-label">คะแนนรอบนี้</span>
+        <span class="go-stat-val">${curScore}</span>
+      </div>
+      <div class="go-stat-card best">
+        <span class="go-stat-label">🏆 คะแนนสูงสุด</span>
+        <span class="go-stat-val">${topScore}</span>
+      </div>
+      <div class="go-stat-card">
+        <span class="go-stat-label">ช่วยคนรอบนี้</span>
+        <span class="go-stat-val">${curRescued} คน</span>
+      </div>
+      <div class="go-stat-card best">
+        <span class="go-stat-label">🛟 สถิติช่วยคนสูงสุด</span>
+        <span class="go-stat-val">${topRescued} คน</span>
+      </div>
+    </div>
+  `;
+  if($('#oh')) $('#oh').textContent = '';
 }
+function hasActiveGame(){
+  return !!(S && S.state !== 'OVER' && (S.dist > 0 || S.score > 0 || S.t > 0));
+}
+
+function updateContinueButtonsState(){
+  const active = hasActiveGame();
+  const continueButtons = document.querySelectorAll('#mr, #igs-resume, #sm-resume, .btn-continue');
+
+  continueButtons.forEach(btn => {
+    btn.disabled = !active;
+    btn.classList.toggle('btn-continue-active', active);
+  });
+}
+
 function showMenu(){
   cancelCountdown();
-  mm.hidden=false;hw.hidden=true;$('#ov').hidden=true;
-  $('#mr').disabled=S.state!=='PAUSED';
+  closeSettings();
+  closeSkinModal();
+  closeHowToPlay();
+  resetRestartConfirm();
+  updateHighScoreUI();
+  mm.hidden=false;$('#ov').hidden=true;
+  updateContinueButtonsState();
 }
 function pause(){
   if(S.state==='RUN'||S.state==='COUNTDOWN'){
@@ -838,12 +1217,16 @@ function pause(){
 }
 function startNew(){
   cancelCountdown();
+  closeSettings();
+  closeSkinModal();
+  closeHowToPlay();
   newGame();
   S.state='RUN';
   mm.hidden=true;
   $('#ov').hidden=true;
   acc=0;
   last=performance.now()/1000;
+  updateContinueButtonsState();
 }
 function resume(){
   if(S.state!=='PAUSED')return;
@@ -875,11 +1258,507 @@ function resume(){
   };
   countdownTimer=setTimeout(tick,1000);
 }
-$('#go').onclick=$('#ms').onclick=$('#br').onclick=startNew;$('#mr').onclick=resume;
-$('#gm').onclick=()=>{cancelCountdown();newGame();showMenu()};
-$('#mh').onclick=()=>hw.hidden=false;$('#hx').onclick=()=>hw.hidden=true;
-$('#mso').onclick=()=>{snd=!snd;sfx.enabled=snd;$('#mso').textContent='เสียง: '+(snd?'เปิด 🔊':'ปิด 🔇')};
-$('#bp').onclick=()=>{if(S.state==='RUN'||S.state==='COUNTDOWN')pause();else if(S.state==='PAUSED')resume()};
+// ตัวแปรสำหรับระบบยืนยันเริ่มใหม่ในปุ่มแบบกดซ้ำ 2 ครั้ง (In-Button Two-Tap Confirmation)
+let isConfirmingRestart = false;
+let confirmTimeout = null;
+
+function resetRestartConfirm(){
+  if(confirmTimeout){
+    clearTimeout(confirmTimeout);
+    confirmTimeout = null;
+  }
+  isConfirmingRestart = false;
+  const btnMs = $('#ms');
+  const btnIgsRestart = $('#igs-restart') || $('#sm-restart');
+  const btnBr = $('#br');
+  if(btnMs) btnMs.textContent = '▶ เริ่มเกม';
+  if(btnIgsRestart) btnIgsRestart.textContent = '🔄 เริ่มเกมใหม่';
+  if(btnBr) btnBr.textContent = 'เริ่มใหม่';
+}
+
+function updateSettingsUI(){
+  const sfxText = '🔊 เอฟเฟค: ' + (isSfxEnabled ? 'เปิด' : 'ปิด');
+  const bgmText = '🎵 เพลง: ' + (isBgmEnabled ? 'เปิด' : 'ปิด');
+  const testText = '🛡️ โหมดทดสอบ: ' + (testMode ? 'เปิด 🟢' : 'ปิด ⚪');
+  const hitboxText = '🎯 เปิด/ปิดฮิตบ็อกซ์: ' + (dbg ? 'เปิด' : 'ปิด');
+
+  // Modal 1: เมนูตั้งค่าหน้าหลัก (Main Menu Settings)
+  if($('#mms-sfx')) $('#mms-sfx').textContent = sfxText;
+  if($('#mms-bgm')) $('#mms-bgm').textContent = bgmText;
+  if($('#mms-test')) $('#mms-test').textContent = testText;
+  if($('#mms-hitbox')) $('#mms-hitbox').textContent = hitboxText;
+
+  // Modal 2: เมนูตั้งค่าระหว่างเล่นเกม (In-Game Settings)
+  if($('#igs-sfx')) $('#igs-sfx').textContent = sfxText;
+  if($('#igs-bgm')) $('#igs-bgm').textContent = bgmText;
+  if($('#igs-test')) $('#igs-test').textContent = testText;
+  if($('#igs-hitbox')) $('#igs-hitbox').textContent = hitboxText;
+
+  // รองรับ ID เดิม
+  if($('#sm-sfx')) $('#sm-sfx').textContent = sfxText;
+  if($('#sm-bgm')) $('#sm-bgm').textContent = bgmText;
+  if($('#sm-test')) $('#sm-test').textContent = testText;
+  if($('#sm-hitbox')) $('#sm-hitbox').textContent = hitboxText;
+  if($('#sm-sound')) $('#sm-sound').textContent = '🔊 เปิด/ปิดเสียง: ' + (isSfxEnabled ? 'เปิด' : 'ปิด');
+}
+
+function toggleSfx(){
+  isSfxEnabled = !isSfxEnabled;
+  snd = isSfxEnabled;
+  sfx.enabled = isSfxEnabled;
+  updateSettingsUI();
+}
+
+function toggleBgm(){
+  // สลับสถานะ boolean เท่านั้น (ไม่มีการสร้างหรือเล่นไฟล์เสียง BGM ใดๆ ทั้งสิ้น)
+  isBgmEnabled = !isBgmEnabled;
+  updateSettingsUI();
+}
+
+function toggleSound(){
+  toggleSfx();
+}
+
+function toggleHitbox(){
+  dbg = !dbg;
+  if($('#bd')) $('#bd').textContent = 'Hitbox: ' + (dbg ? 'เปิด' : 'ปิด');
+  updateSettingsUI();
+}
+
+function toggleTestMode(){
+  setTestMode(!testMode);
+}
+
+// 1. ฟังก์ชันเปิด/ปิด เมนูตั้งค่าหน้าหลัก (Main Menu Settings Modal)
+function openMainMenuSettings(){
+  updateSettingsUI();
+  if($('#main-menu-settings')) $('#main-menu-settings').hidden = false;
+}
+
+function closeMainMenuSettings(){
+  if($('#main-menu-settings')) $('#main-menu-settings').hidden = true;
+}
+
+// 2. ฟังก์ชันเปิด/ปิด เมนูตั้งค่าระหว่างเล่นเกม (In-Game Settings Modal)
+function openInGameSettings(){
+  if(S && (S.state === 'RUN' || S.state === 'COUNTDOWN')){
+    cancelCountdown();
+    S.state = 'PAUSED';
+  }
+  updateSettingsUI();
+  updateContinueButtonsState();
+  resetRestartConfirm();
+  if($('#in-game-settings')) $('#in-game-settings').hidden = false;
+  if($('#btn-settings')) $('#btn-settings').hidden = true;
+}
+
+function closeInGameSettings(){
+  if($('#in-game-settings')) $('#in-game-settings').hidden = true;
+  if($('#btn-settings') && S && (S.state === 'RUN' || S.state === 'PAUSED')) $('#btn-settings').hidden = false;
+  resetRestartConfirm();
+  if(S && S.state === 'PAUSED' && ($('#mm') && $('#mm').hidden)){
+    resume();
+  }
+}
+
+// ฟังก์ชันปิดการตั้งค่าทั้งหมด
+function closeSettings(){
+  closeMainMenuSettings();
+  closeInGameSettings();
+  if($('#settings-menu')) $('#settings-menu').hidden = true;
+}
+
+function openSettings(){
+  openInGameSettings();
+}
+
+/* ---------- Skin System & Live Animated Preview ---------- */
+const SKINS = [
+  { id: 'duck', name: 'เป็ดไปไหนวะ' },
+  { id: 'shark', name: 'ปลาทูย่านแม่กลอง' },
+  { id: 'unicorn', name: 'เจ้าม้าตัวน้อยตัวจ้อย' },
+  { id: 'dog_moto', name: 'สาธุ 999' }
+];
+let viewedSkinIndex = 0;
+let skinPreviewActive = false;
+let skinPreviewRaf = null;
+let pendingStartFromSkin = false;
+
+function updateSkinDisplay(){
+  const skin = SKINS[viewedSkinIndex];
+  if($('#skin-name-display')){
+    $('#skin-name-display').textContent = skin.name;
+  }
+  const btn = $('#skin-action-btn') || $('#skin-select-btn');
+  if(btn){
+    let highScore = parseInt(localStorage.getItem('highScore')) || 0;
+    let highRescues = parseInt(localStorage.getItem('highRescues')) || parseInt(localStorage.getItem('bestRescues')) || 0;
+
+    if(skin.id === 'shark'){
+      if(highScore >= 40000){
+        btn.disabled = false;
+        if(pendingStartFromSkin){
+          btn.textContent = 'ตกลง & เริ่มเกม (' + skin.name + ')';
+          btn.classList.remove('active-skin-btn');
+        } else {
+          const isEquipped = (currentSkin === skin.id);
+          btn.textContent = isEquipped ? '✓ กำลังใช้งาน' : 'เลือกใช้งาน';
+          btn.classList.toggle('active-skin-btn', isEquipped);
+        }
+      } else {
+        btn.disabled = true;
+        btn.textContent = 'ต้องการคะแนนสูงสุด 40,000';
+        btn.classList.remove('active-skin-btn');
+      }
+    } else if(skin.id === 'unicorn'){
+      if(highRescues >= 300){
+        btn.disabled = false;
+        if(pendingStartFromSkin){
+          btn.textContent = 'ตกลง & เริ่มเกม (' + skin.name + ')';
+          btn.classList.remove('active-skin-btn');
+        } else {
+          const isEquipped = (currentSkin === skin.id);
+          btn.textContent = isEquipped ? '✓ กำลังใช้งาน' : 'เลือกใช้งาน';
+          btn.classList.toggle('active-skin-btn', isEquipped);
+        }
+      } else {
+        btn.disabled = true;
+        btn.textContent = 'ต้องการสถิติช่วยคน 300';
+        btn.classList.remove('active-skin-btn');
+      }
+    } else if(skin.id === 'dog_moto'){
+      if(highScore >= 130000){
+        btn.disabled = false;
+        if(pendingStartFromSkin){
+          btn.textContent = 'ตกลง & เริ่มเกม (' + skin.name + ')';
+          btn.classList.remove('active-skin-btn');
+        } else {
+          const isEquipped = (currentSkin === skin.id);
+          btn.textContent = isEquipped ? '✓ กำลังใช้งาน' : 'เลือกใช้งาน';
+          btn.classList.toggle('active-skin-btn', isEquipped);
+        }
+      } else {
+        btn.disabled = true;
+        btn.textContent = 'ต้องการคะแนนสูงสุด 130,000';
+        btn.classList.remove('active-skin-btn');
+      }
+    } else {
+      // เป็ด (duck): เปิดใช้งานได้เสมอ
+      btn.disabled = false;
+      if(pendingStartFromSkin){
+        btn.textContent = 'ตกลง & เริ่มเกม (' + skin.name + ')';
+        btn.classList.remove('active-skin-btn');
+      } else {
+        const isEquipped = (currentSkin === skin.id);
+        btn.textContent = isEquipped ? '✓ กำลังใช้งาน' : 'เลือกใช้งาน';
+        btn.classList.toggle('active-skin-btn', isEquipped);
+      }
+    }
+  }
+}
+
+function updateSkinUI(){
+  updateSkinDisplay();
+}
+
+function nextSkin(){
+  viewedSkinIndex = (viewedSkinIndex + 1) % SKINS.length;
+  updateSkinDisplay();
+}
+
+function prevSkin(){
+  viewedSkinIndex = (viewedSkinIndex - 1 + SKINS.length) % SKINS.length;
+  updateSkinDisplay();
+}
+
+function applyViewedSkin(){
+  const skin = SKINS[viewedSkinIndex];
+  const viewedSkin = skin.id;
+  let highScore = parseInt(localStorage.getItem('highScore')) || 0;
+  let highRescues = parseInt(localStorage.getItem('highRescues')) || parseInt(localStorage.getItem('bestRescues')) || 0;
+
+  if (viewedSkin === 'shark' && highScore < 40000) return;
+  if (viewedSkin === 'unicorn' && highRescues < 300) return;
+  if (viewedSkin === 'dog_moto' && highScore < 130000) return;
+
+  selectSkin(skin.id);
+  closeSkinModal();
+  if(pendingStartFromSkin){
+    pendingStartFromSkin = false;
+    startNew();
+  } else if(S && S.state === 'PAUSED'){
+    resume();
+  }
+}
+
+function skinPreviewLoop(ms){
+  if(!skinPreviewActive) return;
+  const canvas = $('#skin-preview-canvas');
+  if(!canvas){ skinPreviewActive = false; return; }
+  const pctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const time = ms / 1000;
+
+  // วาดพื้นหลังระลอกคลื่นน้ำ
+  pctx.clearRect(0, 0, w, h);
+  pctx.save();
+  pctx.fillStyle = '#0e4a5d';
+  pctx.beginPath();
+  pctx.roundRect(0, 0, w, h, 18);
+  pctx.fill();
+  pctx.clip();
+
+  pctx.strokeStyle = 'rgba(34, 182, 238, 0.24)';
+  pctx.lineWidth = 2.5;
+  for(let y = 16; y < h + 20; y += 22){
+    pctx.beginPath();
+    for(let x = -10; x < w + 16; x += 16){
+      pctx.quadraticCurveTo(x + 4, y + Math.sin(time * 3 + x) * 2, x + 8, y);
+    }
+    pctx.stroke();
+  }
+
+  // วาดตัวละครสกินที่กำลังดูอยู่ (จัดตำแหน่งกึ่งกลางกล่องพรีวิวด้วย translate w/2, h/2)
+  const currentViewed = SKINS[viewedSkinIndex].id;
+  pctx.save();
+  pctx.translate(w / 2, h / 2);
+  drawDuck({ x: 0, y: 15, s: 70 }, 0, 0, pctx, currentViewed, time);
+  pctx.restore();
+
+  pctx.restore();
+
+  skinPreviewRaf = requestAnimationFrame(skinPreviewLoop);
+}
+
+function openSkinModal(isFirstTime = false){
+  pendingStartFromSkin = isFirstTime;
+  viewedSkinIndex = SKINS.findIndex(s => s.id === currentSkin);
+  if(viewedSkinIndex < 0) viewedSkinIndex = 0;
+
+  if($('#skin-modal')) $('#skin-modal').hidden = false;
+  if($('#btn-settings')) $('#btn-settings').hidden = true;
+  if($('#btn-skin')) $('#btn-skin').hidden = true;
+
+  updateSkinDisplay();
+
+  if(!skinPreviewActive){
+    skinPreviewActive = true;
+    skinPreviewRaf = requestAnimationFrame(skinPreviewLoop);
+  }
+}
+
+function closeSkinModal(){
+  if($('#skin-modal')) $('#skin-modal').hidden = true;
+  skinPreviewActive = false;
+  if(skinPreviewRaf){
+    cancelAnimationFrame(skinPreviewRaf);
+    skinPreviewRaf = null;
+  }
+}
+
+function selectSkin(skinId){
+  currentSkin = skinId;
+  try {
+    localStorage.setItem('currentSkin', skinId);
+  } catch(e) {}
+  updateSkinDisplay();
+}
+
+function handleSkinBtnClick(e){
+  if(e && e.preventDefault) e.preventDefault();
+  if(S.state === 'RUN' || S.state === 'COUNTDOWN'){
+    cancelCountdown();
+    S.state = 'PAUSED';
+  }
+  openSkinModal(false);
+}
+
+function toggleSound(){
+  snd = !snd;
+  sfx.enabled = snd;
+  if($('#mso')) $('#mso').textContent = 'เสียง: ' + (snd ? 'เปิด 🔊' : 'ปิด 🔇');
+  updateSettingsUI();
+}
+
+function toggleHitbox(){
+  dbg = !dbg;
+  if($('#bd')) $('#bd').textContent = 'Hitbox: ' + (dbg ? 'เปิด' : 'ปิด');
+  updateSettingsUI();
+}
+
+function toggleTestMode(){
+  setTestMode(!testMode);
+  updateSettingsUI();
+}
+
+// ฟังก์ชันเริ่มเกมใหม่พร้อมระบบยืนยันในปุ่ม (Two-Tap Confirmation - ปลอดภัย 100% ไม่ใช้ window.confirm)
+function handleStartGame(e){
+  if(e && e.preventDefault) e.preventDefault();
+  const btn = (e && e.currentTarget) || (e && e.target && e.target.closest('button')) || ($('#sm-restart') || $('#ms'));
+  const isMainMenuBtn = (btn && btn.id === 'ms');
+
+  // กรณีมีเกมกำลังเล่นอยู่หรือมีเกมค้างอยู่ (Active Game): ต้องกดยืนยัน 2 ครั้ง (Two-Tap Confirmation)
+  if(hasActiveGame()){
+    if(!isConfirmingRestart){
+      // กดครั้งที่ 1: เปลี่ยนข้อความปุ่มเพื่อขอการยืนยัน และตั้งเวลา 3 วินาที (3000ms)
+      isConfirmingRestart = true;
+      if(btn) btn.textContent = isMainMenuBtn ? 'แน่ใจไหม? กดอีกครั้ง' : 'ยืนยันเริ่มใหม่? (กดซ้ำ)';
+      if(confirmTimeout) clearTimeout(confirmTimeout);
+      confirmTimeout = setTimeout(()=>{
+        resetRestartConfirm();
+      }, 3000);
+      return;
+    } else {
+      // กดครั้งที่ 2 (ภายใน 3 วินาที): ผู้เล่นยืนยันการเริ่มเกมใหม่จริง
+      resetRestartConfirm();
+      closeSettings();
+      closeSkinModal();
+      startNew();
+      return;
+    }
+  }
+
+  // กรณีไม่มีเกมค้างอยู่: เริ่มเกมใหม่ทันที (หรือเปิด Modal สกินหากเล่นครั้งแรก)
+  resetRestartConfirm();
+  closeSettings();
+  closeSkinModal();
+
+  let hasSavedSkin = false;
+  try {
+    hasSavedSkin = !!localStorage.getItem('currentSkin');
+  } catch(err) {}
+
+  if(!hasSavedSkin){
+    openSkinModal(true);
+    return;
+  }
+
+  startNew();
+}
+
+// ตัวจัดการปุ่มเล่นต่อ (Continue Button)
+function handleContinueGame(){
+  if(!hasActiveGame()) return;
+  cancelCountdown();
+  closeSettings();
+  closeSkinModal();
+  closeHowToPlay();
+  resetRestartConfirm();
+  mm.hidden = true;
+  $('#ov').hidden = true;
+  S.state = 'PAUSED'; // ตั้งเป็น PAUSED ชั่วคราวเพื่อให้ resume() เริ่มนับถอยหลัง 3-2-1
+  resume();
+}
+
+// ตัวจัดการปุ่มหยุด / เล่นต่อ (Pause Button)
+function handleTogglePause(e){
+  if(e && e.preventDefault) e.preventDefault();
+  if(!S) return;
+
+  if(S.state === 'RUN' || S.state === 'COUNTDOWN'){
+    openSettings();
+  } else if(S.state === 'PAUSED'){
+    closeSettings();
+    resume();
+  }
+}
+
+function openHowToPlay(){
+  if(hw){
+    hw.hidden = false;
+    hw.style.display = 'flex';
+  }
+}
+function closeHowToPlay(){
+  if(hw){
+    hw.hidden = true;
+    hw.style.display = 'none';
+  }
+}
+
+$('#go').onclick = startNew;
+$('#ms').onclick = handleStartGame;
+if($('#br')) $('#br').onclick = handleStartGame;
+$('#mr').onclick = handleContinueGame;
+if($('#bp')) $('#bp').onclick = handleTogglePause;
+$('#gm').onclick = ()=>{cancelCountdown();closeSettings();closeSkinModal();closeHowToPlay();newGame();showMenu()};
+if($('#mh')) $('#mh').onclick = openHowToPlay;
+if($('#mm-how-btn')) $('#mm-how-btn').onclick = openHowToPlay;
+if($('#hx')) $('#hx').onclick = closeHowToPlay;
+if($('#mso')) $('#mso').onclick = toggleSound;
+
+// ผูกการทำงานปุ่มเปิด/ปิด และปุ่มภายในของ Main Menu Settings Modal (ซ้ายบน)
+if($('#mm-settings-btn')) $('#mm-settings-btn').onclick = openMainMenuSettings;
+if($('#close-mm-settings-btn')) $('#close-mm-settings-btn').onclick = closeMainMenuSettings;
+if($('#mms-sfx')) $('#mms-sfx').onclick = toggleSfx;
+if($('#mms-bgm')) $('#mms-bgm').onclick = toggleBgm;
+if($('#mms-test')) $('#mms-test').onclick = toggleTestMode;
+if($('#mms-hitbox')) $('#mms-hitbox').onclick = toggleHitbox;
+
+// ผูกการทำงานปุ่มเปิด/ปิด และปุ่มภายในของ In-Game Settings Modal (ขวาล่าง)
+if($('#btn-settings')) $('#btn-settings').onclick = openInGameSettings;
+if($('#close-ig-settings-btn')) $('#close-ig-settings-btn').onclick = closeInGameSettings;
+if($('#igs-resume')) $('#igs-resume').onclick = ()=>{
+  if(!hasActiveGame()) return;
+  closeInGameSettings();
+  resume();
+};
+if($('#igs-restart')) $('#igs-restart').onclick = handleStartGame;
+if($('#igs-sfx')) $('#igs-sfx').onclick = toggleSfx;
+if($('#igs-bgm')) $('#igs-bgm').onclick = toggleBgm;
+if($('#igs-test')) $('#igs-test').onclick = toggleTestMode;
+if($('#igs-hitbox')) $('#igs-hitbox').onclick = toggleHitbox;
+if($('#igs-menu')) $('#igs-menu').onclick = ()=>{
+  if(S) S.state = 'MENU';
+  closeInGameSettings();
+  showMenu();
+};
+
+// รองรับการทำงานย้อนหลัง (Backward Compatibility)
+if($('#close-settings-btn')) $('#close-settings-btn').onclick = closeSettings;
+if($('#sm-sfx')) $('#sm-sfx').onclick = toggleSfx;
+if($('#sm-bgm')) $('#sm-bgm').onclick = toggleBgm;
+if($('#sm-sound')) $('#sm-sound').onclick = toggleSound;
+if($('#sm-hitbox')) $('#sm-hitbox').onclick = toggleHitbox;
+if($('#sm-test')) $('#sm-test').onclick = toggleTestMode;
+if($('#sm-resume')) $('#sm-resume').onclick = ()=>{
+  if(!hasActiveGame()) return;
+  closeSettings();
+  resume();
+};
+if($('#sm-restart')) $('#sm-restart').onclick = handleStartGame;
+if($('#sm-menu')) $('#sm-menu').onclick = ()=>{
+  if(S) S.state = 'MENU';
+  closeSettings();
+  showMenu();
+};
+
+// ตัวแปรส่วนกลางสำหรับเก็บไฟล์เสียงที่ผู้ใช้แนบชั่วคราว
+window.uploadedBgmFile = null;
+const bgmUploadInput = $('#bgm-upload-input');
+const bgmFileName = $('#bgm-file-name');
+if(bgmUploadInput && bgmFileName){
+  bgmUploadInput.addEventListener('change', (event) => {
+    const file = event.target.files && event.target.files[0];
+    if(file){
+      window.uploadedBgmFile = file;
+      bgmFileName.textContent = file.name;
+    }
+  });
+}
+
+// ผูกการทำงานปุ่มของ Skin Selection Menu
+function handleCloseSkinModal(){
+  closeSkinModal();
+  if(S && S.state === 'PAUSED'){
+    resume();
+  }
+}
+if($('#close-skin-btn')) $('#close-skin-btn').onclick = handleCloseSkinModal;
+if($('#btn-skin')) $('#btn-skin').onclick = handleSkinBtnClick;
+if($('#skin-prev')) $('#skin-prev').onclick = prevSkin;
+if($('#skin-next')) $('#skin-next').onclick = nextSkin;
+if($('#skin-action-btn')) $('#skin-action-btn').onclick = applyViewedSkin;
 document.addEventListener('click',e=>{const b=e.target.closest('button');if(b){sfx.play('click');b.blur()}});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();last=performance.now()/1000});
 
@@ -940,23 +1819,767 @@ function drawSplashes(zoff){
   }
 }
 
-/* เป็ดตัวละครหลัก */
-function drawDuck(p,tilt,h=0){
-  const u=p.s,w=lw(u),T=S.t,sw=Math.sin(T*9),bob=Math.abs(sw)*.03*u;ctx.save();ctx.translate(p.x,p.y);
-  if(h<.05){
-    const bw=.58*u+Math.sin(T*12)*.06*u;
-    ctx.fillStyle='rgba(255,255,255,.55)';ell(0,.02*u,bw,.15*u);
-    ctx.strokeStyle='#fff';ctx.lineWidth=w*.75;ctx.beginPath();ctx.arc(0,.02*u,bw*.85,.2,Math.PI-.2);ctx.stroke();
+/* ตัวละครโมเดลเป็ดดั้งเดิม (Duck Model: เป็ดไปไหนวะ) - รองรับ targetCtx */
+function drawDuckModel(tctx, p, tilt = 0, h = 0, time = 0){
+  const u = p.s, w = Math.max(2, u * .07);
+  const sw = Math.sin(time * 9), bob = Math.abs(sw) * .03 * u;
+  tctx.save();
+  tctx.translate(p.x, p.y);
+  if(h < .05){
+    const bw = .58 * u + Math.sin(time * 12) * .06 * u;
+    tctx.fillStyle = 'rgba(255,255,255,.55)';
+    tctx.beginPath(); tctx.ellipse(0, .02 * u, bw, .15 * u, 0, 0, 7); tctx.fill();
+    tctx.strokeStyle = '#fff'; tctx.lineWidth = w * .75;
+    tctx.beginPath(); tctx.arc(0, .02 * u, bw * .85, .2, Math.PI - .2); tctx.stroke();
   }
-  ctx.fillStyle='rgba(10,20,60,.35)';ell(0,0,.44*u,.15*u);
-  ctx.translate(0,-h*u-bob);ctx.rotate(tilt+sw*.03);
-  E(-.18*u,-.04*u+sw*.03*u,.11*u,.05*u,'#ff8a00',w*.8);E(.18*u,-.04*u-sw*.03*u,.11*u,.05*u,'#ff8a00',w*.8);
-  E(0,-.34*u,.42*u,.34*u,'#ffe11a',w);
-  E(-.3*u,-.4*u,.14*u,.23*u,'#ffb800',w*.8);E(.3*u,-.4*u,.14*u,.23*u,'#ffb800',w*.8);
-  TRI([[-.13*u,-.14*u],[.13*u,-.14*u],[0,-.42*u]],'#ffb800',w*.8);
-  E(0,-.74*u,.24*u,.23*u,'#ffe11a',w);E(0,-.63*u,.15*u,.07*u,'#ffc800',w*.4);
-  TRI([[-.05*u,-.93*u],[.05*u,-.93*u],[.02*u,-1.06*u]],'#ffe11a',w*.6);
-  ctx.restore();
+  tctx.fillStyle = 'rgba(10,20,60,.35)';
+  tctx.beginPath(); tctx.ellipse(0, 0, .44 * u, .15 * u, 0, 0, 7); tctx.fill();
+
+  tctx.translate(0, -h * u - bob);
+  tctx.rotate(tilt + sw * .03);
+
+  // เท้าเป็ด
+  tctx.beginPath(); tctx.ellipse(-.18 * u, -.04 * u + sw * .03 * u, .11 * u, .05 * u, 0, 0, 7); tctx.fillStyle = '#ff8a00'; tctx.fill(); tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath(); tctx.ellipse(.18 * u, -.04 * u - sw * .03 * u, .11 * u, .05 * u, 0, 0, 7); tctx.fillStyle = '#ff8a00'; tctx.fill(); tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ลำตัวเป็ดสีเหลือง
+  tctx.beginPath(); tctx.ellipse(0, -.34 * u, .42 * u, .34 * u, 0, 0, 7); tctx.fillStyle = '#ffe11a'; tctx.fill(); tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ปีกสองข้าง
+  tctx.beginPath(); tctx.ellipse(-.3 * u, -.4 * u, .14 * u, .23 * u, 0, 0, 7); tctx.fillStyle = '#ffb800'; tctx.fill(); tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath(); tctx.ellipse(.3 * u, -.4 * u, .14 * u, .23 * u, 0, 0, 7); tctx.fillStyle = '#ffb800'; tctx.fill(); tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+
+  // หางเป็ด
+  tctx.beginPath(); tctx.moveTo(-.13 * u, -.14 * u); tctx.lineTo(.13 * u, -.14 * u); tctx.lineTo(0, -.42 * u); tctx.closePath(); tctx.fillStyle = '#ffb800'; tctx.fill(); tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ศีรษะและหงอน
+  tctx.beginPath(); tctx.ellipse(0, -.74 * u, .24 * u, .23 * u, 0, 0, 7); tctx.fillStyle = '#ffe11a'; tctx.fill(); tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath(); tctx.ellipse(0, -.63 * u, .15 * u, .07 * u, 0, 0, 7); tctx.fillStyle = '#ffc800'; tctx.fill(); tctx.lineWidth = w * .4; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.beginPath(); tctx.moveTo(-.05 * u, -.93 * u); tctx.lineTo(.05 * u, -.93 * u); tctx.lineTo(.02 * u, -1.06 * u); tctx.closePath(); tctx.fillStyle = '#ffe11a'; tctx.fill(); tctx.lineWidth = w * .6; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.restore();
+}
+
+/* ตัวละครโมเดลฉลาม (Shark Model: ปลาทูย่านแม่กลอง) - รองรับ targetCtx */
+function drawSharkModel(tctx, p, tilt = 0, h = 0, time = 0){
+  const isGameplay = (tctx === ctx);
+  const visualScale = isGameplay ? 1.48 : 1.0; // ขยายโมเดลฉลามให้ตัวใหญ่และดุดันขึ้นเฉพาะตอนเล่นเกม (ฮิตบ็อกซ์และฟิสิกส์เท่าเดิม 100%)
+  const u = p.s * visualScale, w = Math.max(2, u * .07);
+  const sw = Math.sin(time * 12), bob = Math.abs(sw) * .025 * u;
+  const tailWag = Math.sin(time * 14); // Tail wagging animation
+  tctx.save();
+  tctx.translate(p.x, p.y);
+
+  // 1. ระลอกคลื่นน้ำและละอองท้ายหาง
+  if(h < .05){
+    const rw = .62 * u + Math.sin(time * 10) * .07 * u;
+    const rh = .22 * u + Math.cos(time * 10) * .03 * u;
+    tctx.fillStyle = 'rgba(255,255,255,.62)';
+    tctx.beginPath(); tctx.ellipse(0, .03 * u, rw, rh, 0, 0, 7); tctx.fill();
+    tctx.strokeStyle = 'rgba(165,243,252,.85)';
+    tctx.lineWidth = w * .8;
+    tctx.beginPath(); tctx.ellipse(0, .03 * u, rw * .88, rh * .75, 0, 0, 7); tctx.stroke();
+
+    const twx = tailWag * .08 * u;
+    tctx.fillStyle = 'rgba(255,255,255,.7)';
+    tctx.beginPath(); tctx.ellipse(twx, .16 * u, .24 * u, .08 * u, 0, 0, 7); tctx.fill();
+  }
+
+  // เงาใต้ตัว
+  tctx.fillStyle = 'rgba(10,20,60,.35)';
+  tctx.beginPath(); tctx.ellipse(0, 0, .46 * u, .16 * u, 0, 0, 7); tctx.fill();
+
+  tctx.translate(0, -h * u - bob);
+  tctx.rotate(tilt + sw * .025);
+
+  const SHARK_BLUE = '#50769d';
+  const SHARK_BELLY = '#f0f4f8';
+  const SHARK_DARK = '#3d5d7e';
+
+  // 2. ครีบข้างซ้ายและขวา
+  tctx.beginPath();
+  tctx.moveTo(-.18 * u, -.32 * u);
+  tctx.bezierCurveTo(-.44 * u, -.26 * u, -.52 * u, -.14 * u, -.4 * u, -.04 * u);
+  tctx.bezierCurveTo(-.3 * u, -.08 * u, -.18 * u, -.18 * u, -.14 * u, -.2 * u);
+  tctx.closePath();
+  tctx.fillStyle = SHARK_BLUE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.beginPath();
+  tctx.moveTo(.18 * u, -.32 * u);
+  tctx.bezierCurveTo(.44 * u, -.26 * u, .52 * u, -.14 * u, .4 * u, -.04 * u);
+  tctx.bezierCurveTo(.3 * u, -.08 * u, .18 * u, -.18 * u, .14 * u, -.2 * u);
+  tctx.closePath();
+  tctx.fillStyle = SHARK_BLUE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+
+  // 3. ครีบหางดุ๊กดิ๊กด้านหลัง (Tail-Wagging Animation)
+  tctx.save();
+  tctx.translate(0, -.08 * u);
+  tctx.rotate(tailWag * .34);
+  tctx.beginPath();
+  tctx.moveTo(-.11 * u, -.1 * u);
+  tctx.quadraticCurveTo(0, .02 * u, .11 * u, -.1 * u);
+  tctx.lineTo(.06 * u, .06 * u);
+  tctx.lineTo(-.06 * u, .06 * u);
+  tctx.closePath();
+  tctx.fillStyle = SHARK_BLUE; tctx.fill();
+  tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.beginPath();
+  tctx.moveTo(0, .04 * u);
+  tctx.bezierCurveTo(-.14 * u, .07 * u, -.28 * u, .17 * u, -.24 * u, .27 * u);
+  tctx.bezierCurveTo(-.15 * u, .23 * u, -.05 * u, .17 * u, 0, .13 * u);
+  tctx.bezierCurveTo(.05 * u, .17 * u, .15 * u, .23 * u, .24 * u, .27 * u);
+  tctx.bezierCurveTo(.28 * u, .17 * u, .14 * u, .07 * u, 0, .04 * u);
+  tctx.closePath();
+  tctx.fillStyle = SHARK_BLUE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.restore();
+
+  // 4. ลำตัวฉลาม
+  tctx.beginPath();
+  tctx.moveTo(0, -.84 * u);
+  tctx.bezierCurveTo(-.38 * u, -.74 * u, -.42 * u, -.26 * u, -.18 * u, -.05 * u);
+  tctx.bezierCurveTo(-.08 * u, -.01 * u, .08 * u, -.01 * u, .18 * u, -.05 * u);
+  tctx.bezierCurveTo(.42 * u, -.26 * u, .38 * u, -.74 * u, 0, -.84 * u);
+  tctx.closePath();
+  tctx.fillStyle = SHARK_BLUE; tctx.fill();
+  tctx.lineWidth = w * 1.15; tctx.strokeStyle = INK; tctx.stroke();
+
+  // 5. ท้องขาว
+  tctx.beginPath();
+  tctx.moveTo(-.17 * u, -.05 * u);
+  tctx.bezierCurveTo(-.1 * u, -.01 * u, .1 * u, -.01 * u, .17 * u, -.05 * u);
+  tctx.bezierCurveTo(.11 * u, -.15 * u, -.11 * u, -.15 * u, -.17 * u, -.05 * u);
+  tctx.fillStyle = SHARK_BELLY; tctx.fill();
+  tctx.lineWidth = w * .7; tctx.strokeStyle = INK; tctx.stroke();
+
+  // 6. ครีบหลัง
+  tctx.beginPath();
+  tctx.moveTo(-.03 * u, -.54 * u);
+  tctx.quadraticCurveTo(0, -.78 * u, .08 * u, -.92 * u);
+  tctx.quadraticCurveTo(.03 * u, -.68 * u, .05 * u, -.42 * u);
+  tctx.closePath();
+  tctx.fillStyle = SHARK_DARK; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+
+  // 7. รอยเหงือก 3 ขีด
+  tctx.lineWidth = w * .85; tctx.strokeStyle = INK; tctx.lineCap = 'round';
+  tctx.beginPath(); tctx.arc(-.24 * u, -.45 * u, .08 * u, .2, 1.1); tctx.stroke();
+  tctx.beginPath(); tctx.arc(-.21 * u, -.38 * u, .08 * u, .2, 1.1); tctx.stroke();
+  tctx.beginPath(); tctx.arc(-.18 * u, -.31 * u, .08 * u, .2, 1.1); tctx.stroke();
+  tctx.beginPath(); tctx.arc(.24 * u, -.45 * u, .08 * u, Math.PI - 1.1, Math.PI - .2); tctx.stroke();
+  tctx.beginPath(); tctx.arc(.21 * u, -.38 * u, .08 * u, Math.PI - 1.1, Math.PI - .2); tctx.stroke();
+  tctx.beginPath(); tctx.arc(.18 * u, -.31 * u, .08 * u, Math.PI - 1.1, Math.PI - .2); tctx.stroke();
+
+  tctx.restore();
+}
+
+/* ตัวละครโมเดลยูนิคอร์น (Unicorn Model: เจ้าม้าตัวน้อยตัวจ้อย) - รองรับ targetCtx */
+function drawUnicornModel(tctx, p, tilt = 0, h = 0, time = 0){
+  const isGameplay = (tctx === ctx);
+  const visualScale = isGameplay ? 1.48 : 1.0; // ขยายโมเดลยูนิคอร์นให้ตัวใหญ่และโดดเด่นน่าเกรงขาม (ฮิตบ็อกซ์เท่าเป็ด 100%)
+  const u = p.s * visualScale, w = Math.max(2, u * .07);
+  const sw = Math.sin(time * 12), bob = Math.abs(sw) * .035 * u;
+  const tailWag = Math.sin(time * 14); // หางสะบัดดุ๊กดิ๊ก
+  tctx.save();
+  tctx.translate(p.x, p.y);
+
+  // 1. ระลอกคลื่นน้ำและละอองน้ำรอบเท้ายูนิคอร์น (Water Ripple & Splash FX)
+  if(h < .05){
+    const rw = .64 * u + Math.sin(time * 10) * .08 * u;
+    const rh = .24 * u + Math.cos(time * 10) * .03 * u;
+    tctx.fillStyle = 'rgba(255,255,255,.62)';
+    tctx.beginPath(); tctx.ellipse(0, .04 * u, rw, rh, 0, 0, 7); tctx.fill();
+    tctx.strokeStyle = 'rgba(196,181,253,.85)'; // ประกายสีม่วงพาสเทล
+    tctx.lineWidth = w * .8;
+    tctx.beginPath(); tctx.ellipse(0, .04 * u, rw * .88, rh * .75, 0, 0, 7); tctx.stroke();
+
+    // ละอองน้ำกระเซ็นที่กีบเท้า
+    const spX1 = -.22 * u + Math.sin(time * 15) * .05 * u;
+    const spX2 = .22 * u + Math.cos(time * 15) * .05 * u;
+    tctx.fillStyle = 'rgba(255,255,255,.75)';
+    tctx.beginPath(); tctx.ellipse(spX1, .12 * u, .16 * u, .06 * u, 0, 0, 7); tctx.fill();
+    tctx.beginPath(); tctx.ellipse(spX2, .12 * u, .16 * u, .06 * u, 0, 0, 7); tctx.fill();
+  }
+
+  // 2. เงาใต้ตัว
+  tctx.fillStyle = 'rgba(10,20,60,.35)';
+  tctx.beginPath(); tctx.ellipse(0, 0, .46 * u, .17 * u, 0, 0, 7); tctx.fill();
+
+  tctx.translate(0, -h * u - bob);
+  tctx.rotate(tilt + sw * .025);
+
+  const UNI_WHITE = '#ffffff';
+  const UNI_SHADOW = '#f1f5f9';
+  const UNI_PINK = '#f472b6';
+  const UNI_PURPLE = '#c084fc';
+  const UNI_CYAN = '#38bdf8';
+  const UNI_GOLD = '#fbbf24';
+  const UNI_HOOF = '#a855f7';
+
+  // 3. กีบเท้าหลังซ้าย-ขวา (Cute Hooves running)
+  const legCycle = Math.sin(time * 12);
+  // ขาซ้าย
+  tctx.save();
+  tctx.translate(-.18 * u, -.1 * u + legCycle * .03 * u);
+  tctx.beginPath();
+  tctx.roundRect(-.07 * u, -.12 * u, .14 * u, .22 * u, .05 * u);
+  tctx.fillStyle = UNI_WHITE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath();
+  tctx.roundRect(-.07 * u, .02 * u, .14 * u, .08 * u, .03 * u);
+  tctx.fillStyle = UNI_HOOF; tctx.fill();
+  tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.restore();
+
+  // ขาขวา
+  tctx.save();
+  tctx.translate(.18 * u, -.1 * u - legCycle * .03 * u);
+  tctx.beginPath();
+  tctx.roundRect(-.07 * u, -.12 * u, .14 * u, .22 * u, .05 * u);
+  tctx.fillStyle = UNI_WHITE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath();
+  tctx.roundRect(-.07 * u, .02 * u, .14 * u, .08 * u, .03 * u);
+  tctx.fillStyle = UNI_HOOF; tctx.fill();
+  tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.restore();
+
+  // 4. หางฟูสายรุ้งสะบัดดุ๊กดิ๊ก (Rainbow Flowing Tail - Tail Wagging)
+  tctx.save();
+  tctx.translate(0, -.18 * u);
+  tctx.rotate(tailWag * .36);
+  // ช่อหางสีชมพู
+  tctx.beginPath();
+  tctx.moveTo(-.06 * u, 0);
+  tctx.bezierCurveTo(-.24 * u, .08 * u, -.32 * u, .28 * u, -.2 * u, .42 * u);
+  tctx.bezierCurveTo(-.1 * u, .32 * u, -.02 * u, .18 * u, 0, .08 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_PINK; tctx.fill();
+  tctx.lineWidth = w * .85; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ช่อหางสีม่วงกลาง
+  tctx.beginPath();
+  tctx.moveTo(0, 0);
+  tctx.bezierCurveTo(-.08 * u, .12 * u, -.04 * u, .35 * u, .05 * u, .46 * u);
+  tctx.bezierCurveTo(.12 * u, .34 * u, .08 * u, .16 * u, .04 * u, .05 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_PURPLE; tctx.fill();
+  tctx.lineWidth = w * .85; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ช่อหางสีฟ้าสดใส
+  tctx.beginPath();
+  tctx.moveTo(.05 * u, 0);
+  tctx.bezierCurveTo(.18 * u, .08 * u, .28 * u, .25 * u, .22 * u, .4 * u);
+  tctx.bezierCurveTo(.12 * u, .28 * u, .06 * u, .14 * u, 0, .05 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_CYAN; tctx.fill();
+  tctx.lineWidth = w * .85; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.restore();
+
+  // 5. ลำตัวม้าอ้วนกลมน่ารัก (Plump Chubby Body seen from rear)
+  tctx.beginPath();
+  tctx.ellipse(0, -.36 * u, .36 * u, .32 * u, 0, 0, 7);
+  tctx.fillStyle = UNI_WHITE; tctx.fill();
+  tctx.lineWidth = w * 1.15; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ไฮไลท์เงาด้านล่างตัว
+  tctx.beginPath();
+  tctx.arc(0, -.36 * u, .34 * u, .2, Math.PI - .2);
+  tctx.strokeStyle = UNI_SHADOW;
+  tctx.lineWidth = w * 1.2;
+  tctx.stroke();
+
+  // สัญลักษณ์ดาววิเศษที่สะโพก (Cutie Mark Star)
+  tctx.fillStyle = UNI_GOLD;
+  tctx.beginPath();
+  tctx.arc(.22 * u, -.32 * u, .045 * u, 0, 7);
+  tctx.fill();
+  tctx.beginPath();
+  tctx.arc(-.22 * u, -.32 * u, .045 * u, 0, 7);
+  tctx.fill();
+
+  // 6. ศีรษะและลำคอ (Head & Mane)
+  tctx.beginPath();
+  tctx.ellipse(0, -.74 * u, .28 * u, .26 * u, 0, 0, 7);
+  tctx.fillStyle = UNI_WHITE; tctx.fill();
+  tctx.lineWidth = w * 1.15; tctx.strokeStyle = INK; tctx.stroke();
+
+  // 7. หูม้าซ้าย-ขวา
+  // หูซ้าย
+  tctx.beginPath();
+  tctx.moveTo(-.22 * u, -.82 * u);
+  tctx.lineTo(-.28 * u, -1.02 * u);
+  tctx.lineTo(-.12 * u, -.92 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_WHITE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath();
+  tctx.moveTo(-.2 * u, -.84 * u);
+  tctx.lineTo(-.25 * u, -.98 * u);
+  tctx.lineTo(-.14 * u, -.92 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_PINK; tctx.fill();
+
+  // หูขวา
+  tctx.beginPath();
+  tctx.moveTo(.22 * u, -.82 * u);
+  tctx.lineTo(.28 * u, -1.02 * u);
+  tctx.lineTo(.12 * u, -.92 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_WHITE; tctx.fill();
+  tctx.lineWidth = w; tctx.strokeStyle = INK; tctx.stroke();
+  tctx.beginPath();
+  tctx.moveTo(.2 * u, -.84 * u);
+  tctx.lineTo(.25 * u, -.98 * u);
+  tctx.lineTo(.14 * u, -.92 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_PINK; tctx.fill();
+
+  // 8. แผงคอสีพาสเทลฟรุ้งฟริ้ง (Pastel Mane flowing down)
+  tctx.beginPath();
+  tctx.ellipse(-.06 * u, -.92 * u, .1 * u, .06 * u, -.3, 0, 7);
+  tctx.fillStyle = UNI_PURPLE; tctx.fill();
+  tctx.lineWidth = w * .7; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.beginPath();
+  tctx.ellipse(.06 * u, -.91 * u, .09 * u, .05 * u, .3, 0, 7);
+  tctx.fillStyle = UNI_PINK; tctx.fill();
+  tctx.lineWidth = w * .7; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.beginPath();
+  tctx.ellipse(-.04 * u, -.68 * u, .12 * u, .18 * u, -.1, 0, 7);
+  tctx.fillStyle = UNI_PINK; tctx.fill();
+  tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+
+  tctx.beginPath();
+  tctx.ellipse(.04 * u, -.64 * u, .1 * u, .16 * u, .1, 0, 7);
+  tctx.fillStyle = UNI_CYAN; tctx.fill();
+  tctx.lineWidth = w * .8; tctx.strokeStyle = INK; tctx.stroke();
+
+  // 9. เขาเดี่ยวยูนิคอร์นสีทองส่องประกาย (Golden Spiral Unicorn Horn)
+  tctx.beginPath();
+  tctx.moveTo(-.06 * u, -.95 * u);
+  tctx.lineTo(0, -1.28 * u);
+  tctx.lineTo(.06 * u, -.95 * u);
+  tctx.closePath();
+  tctx.fillStyle = UNI_GOLD; tctx.fill();
+  tctx.lineWidth = w * 1.05; tctx.strokeStyle = INK; tctx.stroke();
+
+  // ลายเกลียวบนเขา
+  tctx.strokeStyle = '#d97706';
+  tctx.lineWidth = w * .75;
+  tctx.beginPath(); tctx.moveTo(-.03 * u, -1.03 * u); tctx.lineTo(.03 * u, -1.06 * u); tctx.stroke();
+  tctx.beginPath(); tctx.moveTo(-.02 * u, -1.13 * u); tctx.lineTo(.02 * u, -1.16 * u); tctx.stroke();
+  tctx.beginPath(); tctx.moveTo(-.01 * u, -1.22 * u); tctx.lineTo(.01 * u, -1.24 * u); tctx.stroke();
+
+  // ประกายเวทมนตร์วิ้งวับบนยอดเขา (Sparkle star)
+  const sparkScale = 1 + Math.sin(time * 8) * .25;
+  tctx.fillStyle = '#fff';
+  tctx.beginPath();
+  tctx.arc(0, -1.3 * u, .03 * u * sparkScale, 0, 7);
+  tctx.fill();
+
+  tctx.restore();
+}
+
+/* ตัวละครโมเดลหมาขี่มอไซค์ (Dog Moto Model: สาธุ 999) - รองรับ targetCtx */
+function drawDogMotoModel(tctx, p, tilt = 0, h = 0, time = 0){
+  const isGameplay = (tctx === ctx);
+  // สเกลโมเดลใหญ่กว่ายูนิคอร์น (Unicorn = 1.48, Dog Moto = 1.62)
+  const visualScale = isGameplay ? 1.62 : 1.08;
+  const u = p.s * visualScale;
+  // บังคับความหนาของเส้นให้บางคมชัด (Thin & crisp line width 1.35px) เพื่อไม่ให้ภาพกลายเป็นก้อนหนาเตอะ
+  const w = 1.35;
+
+  // แอนิเมชันแรงสั่นสะเทือนของเครื่องยนต์มอเตอร์ไซค์และการเคลื่อนไหว
+  const engineRumble = Math.sin(time * 38) * 0.015 * u;
+  const sw = Math.sin(time * 12), bob = Math.abs(sw) * 0.02 * u;
+  const tailWag = Math.sin(time * 18);
+
+  // ระบบ State Swapping ลูป 15 วินาที: 13 วินาทีแรกมองตรงไปข้างหน้า, 2 วินาทีสุดท้ายหันมายิ้มแฉ่งให้กล้อง
+  const cycleTime = ((time % 15) + 15) % 15;
+  const isSmiling = (cycleTime >= 13);
+
+  tctx.save();
+  tctx.translate(p.x, p.y);
+
+  // 1. Water Ripple & Splash FX ที่ล้อรถมอเตอร์ไซค์
+  if(h < 0.05){
+    const rw = 0.65 * u + Math.sin(time * 14) * 0.07 * u;
+    const rh = 0.22 * u + Math.cos(time * 14) * 0.03 * u;
+    // คลื่นน้ำรอบล้อหลัง
+    tctx.fillStyle = 'rgba(255,255,255,0.65)';
+    tctx.beginPath(); tctx.ellipse(0, 0.05 * u, rw, rh, 0, 0, 7); tctx.fill();
+    tctx.strokeStyle = 'rgba(147,197,253,0.85)';
+    tctx.lineWidth = w;
+    tctx.beginPath(); tctx.ellipse(0, 0.05 * u, rw * 0.88, rh * 0.75, 0, 0, 7); tctx.stroke();
+
+    // ละอองน้ำดีดกระเซ็นออกจากล้อหมุนความเร็วสูง
+    const sp1 = Math.sin(time * 20) * 0.08 * u;
+    const sp2 = Math.cos(time * 24) * 0.07 * u;
+    tctx.fillStyle = 'rgba(240,249,255,0.8)';
+    tctx.beginPath(); tctx.ellipse(-0.16 * u + sp1, 0.12 * u, 0.14 * u, 0.05 * u, -0.2, 0, 7); tctx.fill();
+    tctx.beginPath(); tctx.ellipse(0.16 * u + sp2, 0.12 * u, 0.14 * u, 0.05 * u, 0.2, 0, 7); tctx.fill();
+    tctx.beginPath(); tctx.arc(0, 0.16 * u, 0.06 * u, 0, 7); tctx.fill();
+  }
+
+  // 2. เงาใต้ท้องรถ
+  tctx.fillStyle = 'rgba(10,20,60,0.38)';
+  tctx.beginPath(); tctx.ellipse(0, 0, 0.52 * u, 0.18 * u, 0, 0, 7); tctx.fill();
+
+  // ขยับตัวตามการเอียงเลนและการกระโดด + แรงเครื่องยนต์
+  tctx.translate(0, -h * u - bob + engineRumble);
+  tctx.rotate(tilt + sw * 0.02);
+
+  const DOG_FUR = '#f59e0b';       // ขนสีส้มทอง
+  const DOG_BELLY = '#fef3c7';     // ขนสีครีมอ่อน
+  const DOG_EAR_INNER = '#fca5a5'; // หูด้านในสีชมพู
+  const MOTO_BODY = '#ef4444';     // มอเตอร์ไซค์สีแดงซิ่ง
+  const MOTO_CHROME = '#e2e8f0';
+  const TIRE_COLOR = '#1e293b';
+
+  // 3. ท่อไอเสียและควันปุ๋งๆ ทางขวา
+  tctx.save();
+  tctx.fillStyle = MOTO_CHROME;
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.roundRect(0.18 * u, -0.12 * u, 0.1 * u, 0.22 * u, 0.03 * u);
+  tctx.fill(); tctx.stroke();
+  // ปลายท่อ
+  tctx.fillStyle = '#475569';
+  tctx.beginPath();
+  tctx.ellipse(0.23 * u, 0.09 * u, 0.045 * u, 0.025 * u, 0, 0, 7);
+  tctx.fill(); tctx.stroke();
+  // ควันไอเสีย
+  const smokeAl = Math.max(0, 0.7 - (cycleTime % 0.4));
+  tctx.fillStyle = `rgba(226,232,240,${smokeAl})`;
+  tctx.beginPath();
+  tctx.arc(0.25 * u + Math.sin(time * 15) * 0.03 * u, 0.16 * u, 0.04 * u, 0, 7);
+  tctx.fill();
+  tctx.restore();
+
+  // 4. ล้อหลังยางมอเตอร์ไซค์ (Rear Tire)
+  tctx.fillStyle = TIRE_COLOR;
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.roundRect(-0.13 * u, -0.22 * u, 0.26 * u, 0.32 * u, 0.1 * u);
+  tctx.fill(); tctx.stroke();
+
+  // ดอกยางและแม็กล้อ
+  tctx.fillStyle = '#64748b';
+  tctx.beginPath();
+  tctx.ellipse(0, -0.06 * u, 0.09 * u, 0.12 * u, 0, 0, 7);
+  tctx.fill();
+  tctx.strokeStyle = '#94a3b8';
+  tctx.lineWidth = w * 0.8;
+  tctx.stroke();
+
+  // 5. บังโคลนท้าย (Rear Mudguard / Fender)
+  tctx.fillStyle = MOTO_BODY;
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.moveTo(-0.2 * u, -0.28 * u);
+  tctx.quadraticCurveTo(0, -0.38 * u, 0.2 * u, -0.28 * u);
+  tctx.lineTo(0.16 * u, -0.12 * u);
+  tctx.quadraticCurveTo(0, -0.16 * u, -0.16 * u, -0.12 * u);
+  tctx.closePath();
+  tctx.fill(); tctx.stroke();
+
+  // ไฟเลี้ยวซ้าย-ขวา
+  tctx.fillStyle = '#f59e0b';
+  tctx.beginPath(); tctx.arc(-0.21 * u, -0.22 * u, 0.03 * u, 0, 7); tctx.fill(); tctx.stroke();
+  tctx.beginPath(); tctx.arc(0.21 * u, -0.22 * u, 0.03 * u, 0, 7); tctx.fill(); tctx.stroke();
+
+  // 6. ป้ายทะเบียน "สาธุ 999" (Geometric Centering Method แก้ไข WebKit Text Alignment Bug)
+  tctx.fillStyle = '#ffffff';
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.roundRect(-0.14 * u, -0.15 * u, 0.28 * u, 0.14 * u, 0.03 * u);
+  tctx.fill(); tctx.stroke();
+
+  const plateText = 'สาธุ 999';
+  tctx.fillStyle = '#dc2626';
+  tctx.font = `bold ${Math.max(7, Math.round(u * 0.065))}px sans-serif`;
+  tctx.textAlign = 'left';
+  tctx.textBaseline = 'middle';
+  const textWidth = tctx.measureText(plateText).width;
+  const startX = -textWidth / 2; // คำนวณจุดเริ่มต้น X ด้วยวิธีทางเรขาคณิตให้อยู่ตรงกลางแผ่นป้ายพอดี
+  tctx.fillText(plateText, startX, -0.08 * u);
+
+  // 7. ไฟท้ายมอเตอร์ไซค์ทรงสปอร์ต (Red Tail-light)
+  tctx.fillStyle = '#ef4444';
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.moveTo(-0.12 * u, -0.32 * u);
+  tctx.lineTo(0.12 * u, -0.32 * u);
+  tctx.lineTo(0.08 * u, -0.24 * u);
+  tctx.lineTo(-0.08 * u, -0.24 * u);
+  tctx.closePath();
+  tctx.fill(); tctx.stroke();
+  // ไฮไลท์สะท้อนไฟ
+  tctx.fillStyle = 'rgba(255,255,255,0.7)';
+  tctx.beginPath();
+  tctx.ellipse(0, -0.29 * u, 0.06 * u, 0.02 * u, 0, 0, 7);
+  tctx.fill();
+
+  // 8. แฮนด์มอเตอร์ไซค์และกระจกมองข้าง (Handlebars & Mirrors)
+  tctx.strokeStyle = '#475569';
+  tctx.lineWidth = w * 1.3;
+  tctx.beginPath();
+  tctx.moveTo(-0.38 * u, -0.62 * u);
+  tctx.lineTo(0.38 * u, -0.62 * u);
+  tctx.stroke();
+
+  // ปลอกแฮนด์ดำ
+  tctx.fillStyle = '#0f172a';
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath(); tctx.roundRect(-0.42 * u, -0.65 * u, 0.08 * u, 0.06 * u, 0.02 * u); tctx.fill(); tctx.stroke();
+  tctx.beginPath(); tctx.roundRect(0.34 * u, -0.65 * u, 0.08 * u, 0.06 * u, 0.02 * u); tctx.fill(); tctx.stroke();
+
+  // ก้านและกระจกมองข้างโครเมียม
+  tctx.strokeStyle = MOTO_CHROME;
+  tctx.lineWidth = w;
+  tctx.beginPath(); tctx.moveTo(-0.35 * u, -0.62 * u); tctx.lineTo(-0.39 * u, -0.74 * u); tctx.stroke();
+  tctx.beginPath(); tctx.moveTo(0.35 * u, -0.62 * u); tctx.lineTo(0.39 * u, -0.74 * u); tctx.stroke();
+  tctx.fillStyle = '#bae6fd';
+  tctx.strokeStyle = INK;
+  tctx.beginPath(); tctx.ellipse(-0.39 * u, -0.76 * u, 0.045 * u, 0.035 * u, 0, 0, 7); tctx.fill(); tctx.stroke();
+  tctx.beginPath(); tctx.ellipse(0.39 * u, -0.76 * u, 0.045 * u, 0.035 * u, 0, 0, 7); tctx.fill(); tctx.stroke();
+
+  // 9. เบาะมอเตอร์ไซค์ (Motorcycle Saddle Seat)
+  tctx.fillStyle = '#1c1917';
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.roundRect(-0.24 * u, -0.46 * u, 0.48 * u, 0.16 * u, 0.06 * u);
+  tctx.fill(); tctx.stroke();
+
+  // 10. ลำตัวน้องหมา (Dog Body sitting on the seat)
+  tctx.fillStyle = DOG_FUR;
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.ellipse(0, -0.54 * u, 0.28 * u, 0.22 * u, 0, 0, 7);
+  tctx.fill(); tctx.stroke();
+
+  // ขาหลังน้องหมาที่แนบข้างเบาะ
+  tctx.beginPath(); tctx.ellipse(-0.25 * u, -0.46 * u, 0.09 * u, 0.11 * u, -0.2, 0, 7); tctx.fill(); tctx.stroke();
+  tctx.beginPath(); tctx.ellipse(0.25 * u, -0.46 * u, 0.09 * u, 0.11 * u, 0.2, 0, 7); tctx.fill(); tctx.stroke();
+
+  // หางน้องหมากระดิกดุ๊กดิ๊กด้านหลังเบาะ
+  tctx.save();
+  tctx.translate(0, -0.42 * u);
+  tctx.rotate(tailWag * 0.4);
+  tctx.beginPath();
+  tctx.moveTo(-0.04 * u, 0);
+  tctx.quadraticCurveTo(0.12 * u, 0.12 * u, 0.2 * u, 0.02 * u);
+  tctx.quadraticCurveTo(0.12 * u, -0.06 * u, 0.04 * u, -0.04 * u);
+  tctx.closePath();
+  tctx.fillStyle = DOG_FUR; tctx.fill(); tctx.stroke();
+  // ปลายหางสีขาว
+  tctx.fillStyle = DOG_BELLY;
+  tctx.beginPath(); tctx.arc(0.16 * u, 0.03 * u, 0.035 * u, 0, 7); tctx.fill();
+  tctx.restore();
+
+  // ขาหน้าน้องหมาเอื้อมไปจับแฮนด์รถ
+  tctx.fillStyle = DOG_FUR;
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.ellipse(-0.25 * u, -0.6 * u, 0.08 * u, 0.05 * u, -0.3, 0, 7);
+  tctx.fill(); tctx.stroke();
+  tctx.beginPath();
+  tctx.ellipse(0.25 * u, -0.6 * u, 0.08 * u, 0.05 * u, 0.3, 0, 7);
+  tctx.fill(); tctx.stroke();
+
+  // ปลอกคอสีแดงนำโชคพร้อมเหรียญพระ/กระดิ่งทอง "สาธุ"
+  tctx.fillStyle = '#dc2626';
+  tctx.strokeStyle = INK;
+  tctx.lineWidth = w;
+  tctx.beginPath();
+  tctx.roundRect(-0.16 * u, -0.67 * u, 0.32 * u, 0.06 * u, 0.02 * u);
+  tctx.fill(); tctx.stroke();
+  // เหรียญทองห้อยคอ
+  tctx.fillStyle = '#f59e0b';
+  tctx.beginPath(); tctx.arc(0, -0.62 * u, 0.04 * u, 0, 7); tctx.fill(); tctx.stroke();
+
+  // 11. ศีรษะและใบหน้าน้องหมา (สลับระหว่าง สถานะปกติ กับ สถานะหันมายิ้มแฉ่ง)
+  tctx.save();
+  if(!isSmiling){
+    // === สภาวะปกติ (0-13 วินาที): มองตรงไปข้างหน้า (เห็นด้านหลังหัวและหูกระพือ) ===
+    tctx.fillStyle = DOG_FUR;
+    tctx.strokeStyle = INK;
+    tctx.lineWidth = w;
+
+    // หัวกลมมองจากด้านหลัง
+    tctx.beginPath();
+    tctx.ellipse(0, -0.82 * u, 0.26 * u, 0.24 * u, 0, 0, 7);
+    tctx.fill(); tctx.stroke();
+
+    // หูซ้าย-ขวาพัดกระพือตามลม (Ear Flapping Animation)
+    const earFlap = Math.sin(time * 16) * 0.08;
+    // หูซ้าย
+    tctx.save();
+    tctx.translate(-0.2 * u, -0.92 * u);
+    tctx.rotate(-0.2 + earFlap);
+    tctx.beginPath();
+    tctx.moveTo(0, 0);
+    tctx.quadraticCurveTo(-0.18 * u, -0.12 * u, -0.16 * u, 0.16 * u);
+    tctx.quadraticCurveTo(-0.06 * u, 0.14 * u, 0.04 * u, 0.06 * u);
+    tctx.closePath();
+    tctx.fillStyle = '#b45309'; tctx.fill(); tctx.stroke();
+    tctx.restore();
+
+    // หูขวา
+    tctx.save();
+    tctx.translate(0.2 * u, -0.92 * u);
+    tctx.rotate(0.2 - earFlap);
+    tctx.beginPath();
+    tctx.moveTo(0, 0);
+    tctx.quadraticCurveTo(0.18 * u, -0.12 * u, 0.16 * u, 0.16 * u);
+    tctx.quadraticCurveTo(0.06 * u, 0.14 * u, -0.04 * u, 0.06 * u);
+    tctx.closePath();
+    tctx.fillStyle = '#b45309'; tctx.fill(); tctx.stroke();
+    tctx.restore();
+
+  } else {
+    // === สภาวะหันมายิ้มแฉ่ง (13-15 วินาที): หันหน้ากลับมามองกล้อง ยิ้มกว้างแลบลิ้นมีความสุข ===
+    tctx.translate(0, -0.82 * u);
+    tctx.rotate(Math.sin(time * 6) * 0.05); // โยกหัวน่ารัก
+
+    // หัวกลมมองตรงมาที่กล้อง
+    tctx.fillStyle = DOG_FUR;
+    tctx.strokeStyle = INK;
+    tctx.lineWidth = w;
+    tctx.beginPath();
+    tctx.ellipse(0, 0, 0.27 * u, 0.24 * u, 0, 0, 7);
+    tctx.fill(); tctx.stroke();
+
+    // กระเปาะแก้มและปากสีขาวครีม (Muzzle)
+    tctx.fillStyle = DOG_BELLY;
+    tctx.beginPath();
+    tctx.ellipse(0, 0.06 * u, 0.16 * u, 0.12 * u, 0, 0, 7);
+    tctx.fill(); tctx.stroke();
+
+    // หูตั้งน่ารัก 2 ข้าง
+    tctx.fillStyle = DOG_FUR;
+    tctx.beginPath();
+    tctx.moveTo(-0.16 * u, -0.16 * u);
+    tctx.lineTo(-0.27 * u, -0.34 * u);
+    tctx.lineTo(-0.06 * u, -0.22 * u);
+    tctx.closePath();
+    tctx.fill(); tctx.stroke();
+    tctx.fillStyle = DOG_EAR_INNER;
+    tctx.beginPath();
+    tctx.moveTo(-0.16 * u, -0.18 * u);
+    tctx.lineTo(-0.24 * u, -0.31 * u);
+    tctx.lineTo(-0.09 * u, -0.22 * u);
+    tctx.closePath();
+    tctx.fill();
+
+    tctx.fillStyle = DOG_FUR;
+    tctx.beginPath();
+    tctx.moveTo(0.16 * u, -0.16 * u);
+    tctx.lineTo(0.27 * u, -0.34 * u);
+    tctx.lineTo(0.06 * u, -0.22 * u);
+    tctx.closePath();
+    tctx.fill(); tctx.stroke();
+    tctx.fillStyle = DOG_EAR_INNER;
+    tctx.beginPath();
+    tctx.moveTo(0.16 * u, -0.18 * u);
+    tctx.lineTo(0.24 * u, -0.31 * u);
+    tctx.lineTo(0.09 * u, -0.22 * u);
+    tctx.closePath();
+    tctx.fill();
+
+    // ตาหยียิ้มแฉ่งรูปสระอิมีความสุข (Happy Crescent Smiling Eyes ^^)
+    tctx.strokeStyle = INK;
+    tctx.lineWidth = w * 1.3;
+    tctx.beginPath(); tctx.arc(-0.1 * u, -0.03 * u, 0.045 * u, Math.PI * 1.1, Math.PI * 1.9); tctx.stroke();
+    tctx.beginPath(); tctx.arc(0.1 * u, -0.03 * u, 0.045 * u, Math.PI * 1.1, Math.PI * 1.9); tctx.stroke();
+
+    // แว่นกันแดดสีดำสุดเท่ (Cool Black Sunglasses เฉพาะตอนหันมายิ้ม 13-15 วินาที)
+    tctx.fillStyle = '#0f172a';
+    tctx.strokeStyle = INK;
+    tctx.lineWidth = w;
+    // เลนส์ซ้าย
+    tctx.beginPath();
+    tctx.roundRect(-0.16 * u, -0.075 * u, 0.11 * u, 0.08 * u, 0.02 * u);
+    tctx.fill(); tctx.stroke();
+    // เลนส์ขวา
+    tctx.beginPath();
+    tctx.roundRect(0.05 * u, -0.075 * u, 0.11 * u, 0.08 * u, 0.02 * u);
+    tctx.fill(); tctx.stroke();
+    // สะพานแว่นเชื่อมตรงกลาง
+    tctx.strokeStyle = '#0f172a';
+    tctx.lineWidth = w * 1.5;
+    tctx.beginPath();
+    tctx.moveTo(-0.05 * u, -0.045 * u);
+    tctx.lineTo(0.05 * u, -0.045 * u);
+    tctx.stroke();
+    // ขาแว่นด้านข้าง
+    tctx.strokeStyle = '#0f172a';
+    tctx.lineWidth = w * 1.2;
+    tctx.beginPath(); tctx.moveTo(-0.16 * u, -0.055 * u); tctx.lineTo(-0.22 * u, -0.075 * u); tctx.stroke();
+    tctx.beginPath(); tctx.moveTo(0.16 * u, -0.055 * u); tctx.lineTo(0.22 * u, -0.075 * u); tctx.stroke();
+    // แสงสะท้อนสีขาวเฉียงบนเลนส์ (Sunglasses Glare Highlight)
+    tctx.strokeStyle = 'rgba(255,255,255,0.75)';
+    tctx.lineWidth = w * 0.9;
+    tctx.beginPath(); tctx.moveTo(-0.14 * u, -0.065 * u); tctx.lineTo(-0.08 * u, -0.015 * u); tctx.stroke();
+    tctx.beginPath(); tctx.moveTo(0.07 * u, -0.065 * u); tctx.lineTo(0.13 * u, -0.015 * u); tctx.stroke();
+
+    // แก้มชมพูระเรื่อ (Blush)
+    tctx.fillStyle = 'rgba(251,113,133,0.65)';
+    tctx.beginPath(); tctx.arc(-0.16 * u, 0.04 * u, 0.04 * u, 0, 7); tctx.fill();
+    tctx.beginPath(); tctx.arc(0.16 * u, 0.04 * u, 0.04 * u, 0, 7); tctx.fill();
+
+    // จมูกดำเงา
+    tctx.fillStyle = '#0f172a';
+    tctx.beginPath();
+    tctx.ellipse(0, 0.01 * u, 0.042 * u, 0.028 * u, 0, 0, 7);
+    tctx.fill();
+
+    // รอยยิ้มกว้างอ้าปากแลบลิ้น (Open Happy Mouth with Tongue out)
+    tctx.fillStyle = '#991b1b';
+    tctx.lineWidth = w;
+    tctx.beginPath();
+    tctx.arc(0, 0.07 * u, 0.06 * u, 0.1, Math.PI - 0.1);
+    tctx.closePath();
+    tctx.fill(); tctx.stroke();
+
+    // ลิ้นสีชมพูน่ารักห้อยออกมา
+    tctx.fillStyle = '#f472b6';
+    tctx.beginPath();
+    tctx.ellipse(0, 0.12 * u, 0.038 * u, 0.045 * u, 0, 0, 7);
+    tctx.fill(); tctx.stroke();
+  }
+  tctx.restore();
+
+  tctx.restore();
+}
+
+/* ตัวละครหลัก: สลับการวาดตามสกิน และรองรับ targetCtx (ทั้ง Game Canvas และ Preview Canvas) */
+function drawDuck(p, tilt = 0, h = 0, targetCtx = ctx, skinOverride = null, time = (S ? S.t : 0)){
+  const skin = skinOverride || currentSkin;
+  if(skin === 'shark'){
+    drawSharkModel(targetCtx, p, tilt, h, time);
+  } else if(skin === 'unicorn'){
+    drawUnicornModel(targetCtx, p, tilt, h, time);
+  } else if(skin === 'dog_moto'){
+    drawDogMotoModel(targetCtx, p, tilt, h, time);
+  } else {
+    drawDuckModel(targetCtx, p, tilt, h, time);
+  }
 }
 
 /* คนบนห่วงยาง (Inner-tube Character - ปรับตามรูปต้นแบบ Reference Image เป๊ะ) */
@@ -1130,6 +2753,7 @@ function drawRope(pd,pt,T){
   for(const[c,k]of[[INK,2.3],['#fff3a0',1]]){ctx.strokeStyle=c;ctx.lineWidth=w*k;ctx.beginPath();ctx.moveTo(pd.x,pd.y-.3*pd.s);ctx.quadraticCurveTo(mx,my-.4*pt.s,pt.x,pt.y-.45*pt.s);ctx.stroke()}
 }
 function foot(o,z,pl){
+  if(o.isKnockedOut)return;
   const a=P(o.x-o.hw,z+o.hd),b=P(o.x+o.hw,z+o.hd),c=P(o.x+o.hw,z-o.hd),d=P(o.x-o.hw,z-o.hd);
   ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.lineTo(d.x,d.y);ctx.closePath();
   ctx.fillStyle=`rgba(255,45,85,${.22+.14*pl})`;ctx.fill();ctx.strokeStyle='#ff2d55';ctx.lineWidth=2;ctx.stroke();
@@ -1137,8 +2761,9 @@ function foot(o,z,pl){
 
 /* สิ่งกีดขวาง & NPC (Arcade Chibi Style) */
 function drawObs(o,z){
-  const p=P(o.x,z),u=p.s,w=o.hw*u,l=lw(u),pl=.5+.5*Math.sin(S.t*7),T=S.t;if(p.d<1)return;
+  const p=P(o.x,z,o.y||0),u=p.s,w=o.hw*u,l=lw(u),pl=.5+.5*Math.sin(S.t*7),T=S.t;if(p.d<1)return;
   foot(o,z,pl);ctx.save();ctx.translate(p.x,p.y);ctx.lineCap='round';ctx.lineJoin='round';
+  if(o.isKnockedOut && o.rot) ctx.rotate(o.rot);
   if(o.type==='log'||o.type==='wide'){
     const hh=o.type==='wide'?.66:.58,H2=hh*u/2,n=o.type==='wide'?5:1;
     ctx.translate(0,Math.sin(T*3+o.x*2)*.03*u);ctx.rotate(Math.sin(T*2.4+o.x)*.025);
@@ -1621,14 +3246,143 @@ function drawObs(o,z){
     RR(-.11 * u, -1.72 * u, .22 * u, .05 * u, .02 * u, '#fde047', 0);
     
     ctx.restore();
+  }else if(o.type==='taxi'){
+    // รถแท็กซี่เขียว-เหลือง กรุงเทพมหานคร (Bangkok Taxi ตามภาพ Reference เป๊ะ)
+    const jumpY = o.jumpY || 0;
+    drawTaxi(0, -jumpY * u, u, o, jumpY);
   }
   ctx.restore();
-  if(dbg)dbgBox(o,z);
+  if(dbg && !o.isKnockedOut) dbgBox(o,z);
+}
+
+/* วาดรถแท็กซี่เขียว-เหลือง กรุงเทพมหานคร (Bangkok Taxi ตามภาพ Reference IMG_1187.png เป๊ะ 100%) */
+function drawTaxi(x, y, u, o, jy=0){
+  const l=lw(u);
+  ctx.save();
+  ctx.translate(x, y);
+
+  // 1. เงาและระลอกคลื่นน้ำ
+  const shadowScale = clamp(1 - jy * 0.15, 0.45, 1);
+  ctx.fillStyle = `rgba(10,20,50,${0.4 * shadowScale})`;
+  ell(0, 0.08 * u, 1.15 * u * shadowScale, 0.36 * u * shadowScale);
+
+  if(jy <= 0.05){
+    ctx.fillStyle = 'rgba(255,255,255,.6)';
+    ell(-.55 * u, .1 * u, .48 * u, .18 * u);
+    ell(.55 * u, .1 * u, .48 * u, .18 * u);
+  }
+
+  // ล้อหลัง 2 ข้างพร้อมดอกยาง V-tread ลุยน้ำ
+  for(let sx of [-1, 1]){
+    const lx = sx * 0.58 * u;
+    RR(lx - 0.14 * u, -0.42 * u, 0.28 * u, 0.48 * u, 0.08 * u, '#18181b', l * 1.1);
+    ctx.strokeStyle = '#27272a'; ctx.lineWidth = l * 0.6;
+    for(let k = 0; k < 3; k++){
+      const ty = -0.35 * u + k * 0.12 * u;
+      ctx.beginPath();
+      ctx.moveTo(lx - 0.08 * u, ty - 0.04 * u);
+      ctx.lineTo(lx, ty);
+      ctx.lineTo(lx + 0.08 * u, ty - 0.04 * u);
+      ctx.stroke();
+    }
+  }
+
+  // 2. ตัวถังส่วนล่างสีเขียวแท็กซี่ (Bangkok Taxi Green #16a34a)
+  ctx.beginPath();
+  ctx.roundRect(-0.85 * u, -0.92 * u, 1.7 * u, 0.76 * u, [0.12 * u, 0.12 * u, 0.22 * u, 0.22 * u]);
+  ctx.fillStyle = '#16a34a'; ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = l * 1.2; ctx.stroke();
+
+  // ไฮไลต์ผิวมันเงาบนกันชนเขียว
+  ctx.fillStyle = 'rgba(255,255,255,0.22)';
+  RR(-0.76 * u, -0.32 * u, 0.22 * u, 0.06 * u, 0.03 * u, 'rgba(255,255,255,0.22)', 0);
+  RR(0.54 * u, -0.32 * u, 0.22 * u, 0.06 * u, 0.03 * u, 'rgba(255,255,255,0.22)', 0);
+
+  // ท่อไอเสียโครเมียมด้านล่างขวา
+  circ(0.48 * u, -0.22 * u, 0.11 * u);
+  ctx.fillStyle = '#3f3f46'; ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = l * 0.9; ctx.stroke();
+  circ(0.48 * u, -0.22 * u, 0.06 * u);
+  ctx.fillStyle = '#18181b'; ctx.fill();
+
+  // 3. ตัวถังส่วนบนสีเหลืองสด (Bangkok Taxi Yellow #facc15)
+  ctx.beginPath();
+  ctx.moveTo(-0.82 * u, -0.92 * u);
+  ctx.lineTo(-0.72 * u, -1.48 * u);
+  ctx.quadraticCurveTo(0, -1.68 * u, 0.72 * u, -1.48 * u);
+  ctx.lineTo(0.82 * u, -0.92 * u);
+  ctx.closePath();
+  ctx.fillStyle = '#facc15'; ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = l * 1.2; ctx.stroke();
+
+  // กระจกมองข้างสีดำ ซ้าย-ขวา
+  E(-0.84 * u, -1.22 * u, 0.12 * u, 0.09 * u, '#18181b', l * 0.9);
+  E(0.84 * u, -1.22 * u, 0.12 * u, 0.09 * u, '#18181b', l * 0.9);
+
+  // 4. กระจกหลังรถยนต์สีดำตัดแสง (Tinted Rear Windshield)
+  ctx.beginPath();
+  ctx.moveTo(-0.62 * u, -1.02 * u);
+  ctx.lineTo(-0.54 * u, -1.42 * u);
+  ctx.quadraticCurveTo(0, -1.54 * u, 0.54 * u, -1.42 * u);
+  ctx.lineTo(0.62 * u, -1.02 * u);
+  ctx.closePath();
+  ctx.fillStyle = '#1e293b'; ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = l * 1.0; ctx.stroke();
+
+  // กระจกมองหลังและพนักพิงเบาะด้านในรถ
+  RR(-0.1 * u, -1.46 * u, 0.2 * u, 0.06 * u, 0.02 * u, '#0f172a', 0);
+  RR(-0.44 * u, -1.24 * u, 0.26 * u, 0.18 * u, 0.06 * u, '#334155', 0);
+  RR(0.18 * u, -1.24 * u, 0.26 * u, 0.18 * u, 0.06 * u, '#334155', 0);
+
+  // 5. ไฟเบรกดวงที่สามสีแดงตรงกลางฝากระโปรงท้าย
+  RR(-0.15 * u, -0.98 * u, 0.3 * u, 0.07 * u, 0.03 * u, '#dc2626', l * 0.6);
+
+  // 6. ไฟท้าย 3 สี ซ้าย-ขวา (Red, Amber, White)
+  for(let sx of [-1, 1]){
+    const tx = sx * 0.62 * u;
+    RR(tx - 0.2 * u, -0.92 * u, 0.4 * u, 0.22 * u, 0.06 * u, '#dc2626', l * 0.8);
+    ctx.fillStyle = '#f97316';
+    ctx.fillRect(tx - (sx > 0 ? 0.18 : 0.02) * u, -0.9 * u, 0.12 * u, 0.1 * u);
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(tx - (sx > 0 ? 0.18 : 0.02) * u, -0.79 * u, 0.12 * u, 0.07 * u);
+  }
+
+  // 7. ป้ายทะเบียนสีเหลือง "กรุงเทพมหานคร" กลางกระโปรงท้าย (Geometric Centering Fix)
+  const plateX = -0.36 * u, plateY = -0.88 * u, plateW = 0.72 * u, plateH = 0.24 * u;
+  RR(plateX, plateY, plateW, plateH, 0.04 * u, '#fde047', l * 0.8);
+  ctx.save();
+  const plateText = 'กรุงเทพมหานคร';
+  ctx.font = `900 ${0.105 * u}px Mali, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const plateTextW = ctx.measureText(plateText).width;
+  const plateTextX = Math.round(plateX + (plateW - plateTextW) * 0.5);
+  const plateTextY = Math.round(plateY + plateH * 0.5);
+  ctx.fillStyle = '#18181b';
+  ctx.fillText(plateText, plateTextX, plateTextY);
+  ctx.restore();
+
+  // 8. ป้ายกล่องไฟ TAXI สีขาวโค้งมนบนหลังคา (TAXI Roof Lightbox)
+  ctx.beginPath();
+  ctx.roundRect(-0.34 * u, -1.82 * u, 0.68 * u, 0.22 * u, [0.08 * u, 0.08 * u, 0.04 * u, 0.04 * u]);
+  ctx.fillStyle = '#ffffff'; ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = l * 1.1; ctx.stroke();
+  ctx.save();
+  ctx.fillStyle = '#09090b';
+  ctx.font = `900 ${0.14 * u}px Mali, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const taxiText = 'TAXI';
+  const taxiTextW = ctx.measureText(taxiText).width;
+  ctx.fillText(taxiText, Math.round(-taxiTextW * 0.5), Math.round(-1.71 * u));
+  ctx.restore();
+
+  ctx.restore();
 }
 
 /* ผู้ประสบภัยรอความช่วยเหลือ (Victim: เด็กนักเรียนหญิง/ชาย ตะเกียกตะกายจมน้ำตามภาพ Reference) */
 function drawVic(v,z,t){
-  const p=P(v.x,z),u=p.s;if(p.d<1)return;
+  const p=P(v.x,z,v.y||0),u=p.s;if(p.d<1)return;
   // ปรับขนาดเส้นขอบโมเดล (Stroke Width) ให้เล็กลง คมชัด ละเอียดสวยงามตามคำขอของผู้ใช้
   // ลดขนาดเส้นลงอย่างประณีต คงสไตล์อาร์ตเดิมแต่เส้นบางคมชัด (Delicate & Clean Arcade Art Style)
   const vw=Math.max(0.65,Math.min(1.8,u*0.015)),subVw=Math.max(0.45,Math.min(1.1,vw*0.62)),pl=.5+.5*Math.sin(t*6);
@@ -1639,15 +3393,18 @@ function drawVic(v,z,t){
   
   ctx.save();
   ctx.translate(p.x,p.y+bobY);
+  if(v.isKnockedOut && v.rot) ctx.rotate(v.rot);
   ctx.lineCap='round';ctx.lineJoin='round';
 
-  // 1. วงคลื่นน้ำกระเพื่อมระลอกเขียวช่วยชีวิต (Rescue Aura Ripple)
-  ctx.fillStyle=`rgba(57,255,20,${.22+.18*pl})`;ell(0,0,(1.15+.15*pl)*u,.44*u);
-  ctx.strokeStyle='#39ff14';ctx.lineWidth=Math.max(0.8,vw*0.85);ctx.beginPath();ctx.ellipse(0,0,(1.15+.15*pl)*u,.44*u,0,0,7);ctx.stroke();
+  // 1. วงคลื่นน้ำกระเพื่อมระลอกเขียวช่วยชีวิต (Rescue Aura Ripple - แสดงเฉพาะตอนยังไม่โดนชนปลิว)
+  if(!v.isKnockedOut){
+    ctx.fillStyle=`rgba(57,255,20,${.22+.18*pl})`;ell(0,0,(1.15+.15*pl)*u,.44*u);
+    ctx.strokeStyle='#39ff14';ctx.lineWidth=Math.max(0.8,vw*0.85);ctx.beginPath();ctx.ellipse(0,0,(1.15+.15*pl)*u,.44*u,0,0,7);ctx.stroke();
 
-  // วงคลื่นฟองน้ำสีขาวระลอกกลาง
-  ctx.strokeStyle='rgba(255,255,255,.75)';ctx.lineWidth=Math.max(0.6,subVw);
-  ctx.beginPath();ctx.ellipse(0,0,.8*u,.28*u,0,0,7);ctx.stroke();
+    // วงคลื่นฟองน้ำสีขาวระลอกกลาง
+    ctx.strokeStyle='rgba(255,255,255,.75)';ctx.lineWidth=Math.max(0.6,subVw);
+    ctx.beginPath();ctx.ellipse(0,0,.8*u,.28*u,0,0,7);ctx.stroke();
+  }
 
   // 2. หยาดน้ำกระเซ็นและละอองน้ำรอบตัว (Water Splash Droplets)
   const drops=[
@@ -1778,19 +3535,21 @@ function drawVic(v,z,t){
     circ(-.25*u,-.62*u,.05*u);circ(.25*u,-.62*u,.05*u);
   }
 
-  // 7. ป้ายข้อความขอความช่วยเหลือ และลูกศรชี้ลอยอยู่เหนือหัว
-  const by=-1.35*u-Math.abs(Math.sin(t*5))*.15*u;
-  TRI([[-.26*u,by-.36*u],[.26*u,by-.36*u],[0,by]],'#39ff14',Math.max(0.8,vw*0.85));
-  if(u>14){
-    const msg = v.txt || 'ช่วยด้วย';
-    ctx.font=`700 ${Math.max(12,.28*u)}px Mali,sans-serif`;
-    ctx.textAlign='center';ctx.lineWidth=Math.max(1.5,Math.min(3,u*0.03));
-    ctx.strokeStyle=INK;ctx.strokeText(msg,0,by-.55*u);
-    ctx.fillStyle='#fff';ctx.fillText(msg,0,by-.55*u);
+  // 7. ป้ายข้อความขอความช่วยเหลือ และลูกศรชี้ลอยอยู่เหนือหัว (แสดงเฉพาะตอนรอความช่วยเหลือ)
+  if(!v.isKnockedOut){
+    const by=-1.35*u-Math.abs(Math.sin(t*5))*.15*u;
+    TRI([[-.26*u,by-.36*u],[.26*u,by-.36*u],[0,by]],'#39ff14',Math.max(0.8,vw*0.85));
+    if(u>14){
+      const msg = v.txt || 'ช่วยด้วย';
+      ctx.font=`700 ${Math.max(12,.28*u)}px Mali,sans-serif`;
+      ctx.textAlign='center';ctx.lineWidth=Math.max(1.5,Math.min(3,u*0.03));
+      ctx.strokeStyle=INK;ctx.strokeText(msg,0,by-.55*u);
+      ctx.fillStyle='#fff';ctx.fillText(msg,0,by-.55*u);
+    }
   }
 
   ctx.restore();
-  if(dbg)dbgCircle(v.x,z,RESCUE.radius,'#7dff9a');
+  if(dbg && !v.isKnockedOut) dbgCircle(v.x,z,RESCUE.radius,'#7dff9a');
 }
 
 /* ---------- โลก: Arcade ---------- */
@@ -2057,9 +3816,12 @@ function drawRestaurant(m,sd,zn,zf,Z,xs,xw,xm,q,lit){
     const signW=Math.min(180,pSign.s*2.2);
     RR(pSign.x-signW/2,pSign.y-pSign.s*.2,signW,pSign.s*.38,3,'#181a20',1);
     ctx.font=`700 ${Math.min(22,pSign.s*.24)}px Mali,sans-serif`;
-    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.textAlign='left';
+    ctx.textBaseline='middle';
     ctx.fillStyle=lit?'#ffd166':'#ffffff';
-    ctx.fillText(name,pSign.x,pSign.y-.02*pSign.s);
+    const textW = ctx.measureText(name).width;
+    const textX = Math.round(pSign.x - (textW / 2));
+    ctx.fillText(name, textX, pSign.y-.02*pSign.s);
     glow(pSign.x,pSign.y,pSign.s*1.2);
   }
 
@@ -2243,9 +4005,14 @@ function bldg(m,sd,zn,zf,Z,par){ // ห้องแถวหลากสไต�
     }
     fq(xs,xw,zn,1.5,2.2,c);
     if(q.s>13){
-      ctx.font=`700 ${q.s*.36}px Mali,sans-serif`;ctx.textAlign='center';ctx.textBaseline='alphabetic';
+      const shopTxt = SG[(m*3+(sd>0?1:0))%SG.length];
+      ctx.font=`700 ${q.s*.36}px Mali,sans-serif`;
+      ctx.textAlign='left';
+      ctx.textBaseline='alphabetic';
       ctx.fillStyle=c==='#ffd166'?'#3a2a00':'#fff';
-      ctx.fillText(SG[(m*3+(sd>0?1:0))%SG.length],q.x,q.y+.12*q.s,Math.abs(xw-xs)*q.s*.9);
+      const textW = ctx.measureText(shopTxt).width;
+      const textX = Math.round(q.x - (textW / 2));
+      ctx.fillText(shopTxt, textX, q.y+.12*q.s, Math.abs(xw-xs)*q.s*.9);
     }
     glow(q.x,q.y,q.s*1.1);
 
@@ -2489,6 +4256,80 @@ function paragon(sd,z){
   const qP=P(mid,z,H+2.3);
   if(qP.s>3)glow(qP.x,qP.y,qP.s*1.8);
 }
+function kmutnb(sd,z){
+  // มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าพระนครเหนือ - อาคาร TGGS (KMUTNB Landmark)
+  // ตั้งอยู่ในเลเยอร์ฉากหลังลึก (Background Layer) ขนาดและสเกลเดียวกับสยามพารากอนเป๊ะ (w=13, H=24, dp=6.5)
+  const xInner=sd*(BANK+6.8),w=13,xOuter=sd*(BANK+6.8+w);
+  const a=Math.min(xInner,xOuter),b=Math.max(xInner,xOuter),H=24,mid=(a+b)/2,dp=6.5;
+
+  // 1. โครงสร้างตึกหลัก (Main Building Block)
+  B(sd,xInner,w,z,dp,0,H,cur.lt>.45?'#f1f5f9':'#1e293b');
+
+  // 2. ปีกกระจกสีเขียวอมฟ้าทั้งสองฝั่ง (Teal Glass Curtain Walls on Left & Right Wings)
+  const wingW = 3.6;
+  const leftA = a + 0.3, leftB = a + 0.3 + wingW;
+  const rightA = b - 0.3 - wingW, rightB = b - 0.3;
+
+  for(let fl = 0; fl < 7; fl++){
+    const y0 = 1.0 + fl * 3.1, y1 = y0 + 2.7;
+    const glassCol = cur.lt > 0.45 ? '#0f766e' : '#0369a1';
+    fq(leftA, leftB, z, y0, y1, glassCol);
+    fq(rightA, rightB, z, y0, y1, glassCol);
+    // แผงกันแดดแนวนอนสีเงิน (Silver Sunshades)
+    fq(leftA, leftB, z, y1 - 0.18, y1, '#e2e8f0');
+    fq(rightA, rightB, z, y1 - 0.18, y1, '#e2e8f0');
+    // เสาซอยกระจกแนวตั้ง (Vertical Mullions)
+    fq(leftA + wingW * 0.5 - 0.08, leftA + wingW * 0.5 + 0.08, z, y0, y1, '#ffffff');
+    fq(rightA + wingW * 0.5 - 0.08, rightA + wingW * 0.5 + 0.08, z, y0, y1, '#ffffff');
+  }
+
+  // 3. ผนังอาคารสีขาวมุกตรงกลาง (Central White Facade Panel - TGGS Front)
+  const cenA = leftB + 0.2, cenB = rightA - 0.2;
+  const cenMid = (cenA + cenB) / 2;
+  fq(cenA, cenB, z, 0.6, H - 0.3, '#ffffff');
+
+  // เส้นคาดแนวตั้งสีชมพูมาเจนต้าและเทา (Iconic Magenta-Pink & Gray TGGS Accent Stripe)
+  const stripeX = cenMid + (cenB - cenA) * 0.22;
+  fq(stripeX - 0.16, stripeX + 0.16, z, 0.8, H - 4.6, '#e11d48');
+  fq(stripeX - 0.30, stripeX - 0.16, z, 0.8, H - 4.6, '#64748b');
+
+  // ครีบระบายอากาศ/ช่องระบายลมแนวนอนบนผนังสีขาว
+  for(let fl = 1; fl < 7; fl++){
+    const ly = 1.0 + fl * 3.1;
+    fq(cenA + 0.4, cenB - 0.4, z, ly, ly + 0.22, '#475569');
+  }
+
+  // 4. หลังคาเพดานยื่นลอยตัวสไตล์โมเดิร์น (Protruding Modern Canopy Roof Slab)
+  fq(a - 0.6, b + 0.6, z + 0.4, H, H + 1.0, '#f8fafc');
+  hq(a - 0.6, b + 0.6, z + 0.4, z - dp - 0.4, H + 1.0, '#cbd5e1');
+
+  // 5. ข้อความตัวอักษร "มจพ." และ "TGGS" ด้วยฟังก์ชันจัดกึ่งกลางเชิงเรขาคณิต (Geometric Centering)
+  const drawGeoBuildingText = (str, cx, cz, cy, fontScale, col) => {
+    const q = P(cx, cz, cy);
+    if(q.s < 3) return;
+    const fSize = Math.max(9, Math.round(q.s * fontScale));
+    ctx.save();
+    ctx.font = `900 ${fSize}px 'Mali', 'Noto Sans Thai', sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = col;
+    const tw = ctx.measureText(str).width;
+    const tx = Math.round(q.x - (tw / 2));
+    const ty = Math.round(q.y);
+    ctx.fillText(str, tx, ty);
+    ctx.restore();
+  };
+
+  // ตัวอักษร "มจพ." สีฟ้าเข้ม มจพ. (#0284c7)
+  drawGeoBuildingText('มจพ.', cenMid, z, H - 2.2, 0.56, '#0284c7');
+
+  // ตัวอักษร "TGGS" สีแดง (#dc2626) ใต้ มจพ.
+  drawGeoBuildingText('TGGS', cenMid, z, H - 4.2, 0.48, '#dc2626');
+
+  // เอฟเฟกต์ไฟนีออนส่องสว่างยามค่ำคืน
+  const qSign = P(cenMid, z, H - 2.5);
+  if(qSign.s > 3) glow(qSign.x, qSign.y, qSign.s * 1.8);
+}
 function yao(sd,z){const xc=sd*(BANK+8.2),R='#c81e2b';fq(xc-3.5,xc-2.7,z,0,7,R);fq(xc+2.7,xc+3.5,z,0,7,R);fq(xc-3.7,xc+3.7,z,7,8,'#a01822');fq(xc-3.7,xc+3.7,z,7.9,8.1,'#f2c230');
   poly(P(xc-4.8,z,8.1),P(xc+4.8,z,8.1),P(xc+3.4,z,9.8),P(xc-3.4,z,9.8),'#f2c230');poly(P(xc-4.8,z,8.1),P(xc-5.6,z,9.3),P(xc-3.4,z,9.8),null,'#f2c230');poly(P(xc+4.8,z,8.1),P(xc+5.6,z,9.3),P(xc+3.4,z,9.8),null,'#f2c230');
   fq(xc-1.3,xc+1.3,z,7.1,7.9,INK);txt('เยาวราช',xc,z,7.3,.42,'#ffd166');fq(xc-5.4,xc-4.4,z,2.5,7.5,'#ffd166');fq(xc+4.4,xc+5.4,z,2.5,7.5,'#ffd166');
@@ -2600,8 +4441,8 @@ function mbk(sd,z){ // เอ็มบีเค เซ็นเตอร์ (MBK
   }
 }
 
-const LM=[wat,tower,elephant,victory,mbk,paragon,yao,swing];
-function landmark(m,dist){if(m%14!==7)return;const L=m/14|0,z=dist-m*6-3;if(z>4||z<-93)return;LM[L%8](L&1?1:-1,z)}
+const LM=[wat,tower,elephant,victory,mbk,paragon,kmutnb,yao,swing];
+function landmark(m,dist){if(m%14!==7)return;const L=m/14|0,z=dist-m*6-3;if(z>4||z<-93)return;LM[L%LM.length](L&1?1:-1,z)}
 /* ---------- ทางยกระดับรถไฟฟ้า BTS พาดข้ามถนน (BTS Skytrain Overpass - ทอดยาวเต็มความกว้างจอ) ---------- */
 function drawBtsOverpass(bz,t){
   if(bz>7.5||bz<-85)return;
@@ -2807,7 +4648,7 @@ function render(al,fd){
   post();
   drawWakes(zoff);
   const pl=.5+.5*Math.sin(s.t*10);
-  s.obs.forEach(o=>{if(o.type==='speedboat'&&o.z+zoff<-2){const zb=o.z+zoff-1.4;hq(o.x-.85,o.x+.85,3,zb,0,`rgba(255,45,85,${.14+.16*pl})`);poly(P(o.x-.5,zb,0),P(o.x+.5,zb,0),P(o.x+2,zb-5,0),P(o.x-2,zb-5,0),'rgba(255,255,255,.5)')}});
+  s.obs.forEach(o=>{if(o.type==='speedboat' && !o.isKnockedOut && o.z+zoff<-2){const zb=o.z+zoff-1.4;hq(o.x-.85,o.x+.85,3,zb,0,`rgba(255,45,85,${.14+.16*pl})`);poly(P(o.x-.5,zb,0),P(o.x+.5,zb,0),P(o.x+2,zb-5,0),P(o.x-2,zb-5,0),'rgba(255,255,255,.5)')}});
   if(s.tuktukWarn){
     const tw=s.tuktukWarn,pulse=.5+.5*Math.sin(s.t*16);
     hq(tw.x-.85,tw.x+.85,7.2,3.2,0,`rgba(255,30,80,${.28+.28*pulse})`);
@@ -2815,6 +4656,19 @@ function render(al,fd){
       const pA=P(tw.x,az,0);
       if(pA.d>.8){
         ctx.fillStyle=`rgba(255,235,59,${.4+.5*pulse})`;
+        ctx.font=`900 ${Math.max(16,pA.s*.45)}px Mali,sans-serif`;
+        ctx.textAlign='center';
+        ctx.fillText('▲',pA.x,pA.y);
+      }
+    }
+  }
+  if(s.taxiWarn){
+    const tw=s.taxiWarn,pulse=.5+.5*Math.sin(s.t*16);
+    hq(tw.x-.85,tw.x+.85,7.2,3.2,0,`rgba(34,197,94,${.28+.28*pulse})`);
+    for(let az=6.8;az>=3.6;az-=1.1){
+      const pA=P(tw.x,az,0);
+      if(pA.d>.8){
+        ctx.fillStyle=`rgba(187,247,208,${.4+.5*pulse})`;
         ctx.font=`900 ${Math.max(16,pA.s*.45)}px Mali,sans-serif`;
         ctx.textAlign='center';
         ctx.fillText('▲',pA.x,pA.y);
@@ -2829,11 +4683,39 @@ function render(al,fd){
   D_QUEUE.length=0;
   for(let i=0;i<s.obs.length;i++){const o=s.obs[i];D_QUEUE.push({z:o.z+zoff,f:()=>drawObs(o,o.z+zoff)})}
   for(let i=0;i<s.vic.length;i++){const v=s.vic[i];D_QUEUE.push({z:v.z+zoff,f:()=>drawVic(v,v.z+zoff,s.t)})}
-  D_QUEUE.push({z:duckSortZ,f:()=>{drawDuck(hb.duck.pd,clamp(d.vx*.03,-.25,.25),jy)}});
-  D_QUEUE.push({z:hb.tube.z,f:()=>{
-    drawRope({x:hb.duck.pd.x,y:hb.duck.pd.y-jy*hb.duck.pd.s,s:hb.duck.pd.s},{x:hb.tube.pt.x,y:hb.tube.pt.y-jy*hb.tube.pt.s,s:hb.tube.pt.s},t.T);
-    drawTube(hb.tube.pt,clamp(t.vx*.04,-.3,.3),s.pass,jy);
-  }});
+  if(s.isRidingTaxi){
+    // ขยายขนาดตัวรถแท็กซี่ให้ใหญ่เต็มคัน สมจริงระดับรถยนต์จริง (Full-sized Vehicle Scale)
+    // โดยไม่กระทบต่อขนาดปกติของเป็ดและห่วงยางหลังหมดเวลาบัฟ
+    const taxiScale = 1.95;
+    const taxiU = hb.duck.pd.s * taxiScale;
+    D_QUEUE.push({z:hb.duck.z, f:()=>{
+      drawTaxi(hb.duck.pd.x, hb.duck.pd.y - jy * taxiU, taxiU, null, jy);
+    }});
+  } else {
+    // กะพริบถี่ๆ และแสดงเกราะสะท้อนแสงช่วงสถานะอมตะหลังลงจากแท็กซี่ (Post-Taxi Invincibility I-Frames)
+    const isInvincible = s.invincibleTimer > 0;
+    const blinkAlpha = isInvincible ? ((Math.floor(s.t * 22) % 2 === 0) ? 0.35 : 0.85) : 1.0;
+    D_QUEUE.push({z:duckSortZ,f:()=>{
+      if(isInvincible){
+        ctx.save();
+        ctx.globalAlpha = blinkAlpha;
+        // วาดประกายเกราะคุ้มกันสีทองอ่อนรอบเป็ด
+        ctx.strokeStyle = `rgba(255,225,50,${0.5 + 0.5 * Math.sin(s.t * 24)})`;
+        ctx.lineWidth = Math.max(2, hb.duck.pd.s * 0.08);
+        ctx.beginPath();
+        ctx.ellipse(hb.duck.pd.x, hb.duck.pd.y - jy*hb.duck.pd.s - hb.duck.pd.s*0.35, hb.duck.pd.s*0.55, hb.duck.pd.s*0.48, 0, 0, 7);
+        ctx.stroke();
+      }
+      drawDuck(hb.duck.pd,clamp(d.vx*.03,-.25,.25),jy);
+      if(isInvincible){ ctx.restore(); }
+    }});
+    D_QUEUE.push({z:hb.tube.z,f:()=>{
+      if(isInvincible){ ctx.save(); ctx.globalAlpha = blinkAlpha; }
+      drawRope({x:hb.duck.pd.x,y:hb.duck.pd.y-jy*hb.duck.pd.s,s:hb.duck.pd.s},{x:hb.tube.pt.x,y:hb.tube.pt.y-jy*hb.tube.pt.s,s:hb.tube.pt.s},t.T);
+      drawTube(hb.tube.pt,clamp(t.vx*.04,-.3,.3),s.pass,jy);
+      if(isInvincible){ ctx.restore(); }
+    }});
+  }
 
   D_QUEUE.sort((a,b)=>a.z-b.z);
   for(let i=0;i<D_QUEUE.length;i++)D_QUEUE[i].f();
@@ -2845,24 +4727,81 @@ function render(al,fd){
     const f=s.fx[i];f.t+=fd;if(f.t>1.1){s.fx.splice(i,1);continue}
     const y=f.y-f.t*50;ctx.globalAlpha=1-f.t/1.1;ctx.font='700 24px Mali,sans-serif';ctx.textAlign='center';ctx.lineWidth=6;ctx.strokeStyle=INK;ctx.strokeText(f.txt,f.x,y);ctx.fillStyle=f.col;ctx.fillText(f.txt,f.x,y);ctx.globalAlpha=1;
   }
+
+  // ฟังก์ชันจัดกึ่งกลางข้อความเชิงเรขาคณิต (Geometric Centering Method)
+  // บังคับ textAlign = 'left' แล้วคำนวณตำแหน่งเริ่มต้น X ด้วย Math.round(cx - tw / 2)
+  // ป้องกันบั๊ก WebKit/CoreText Font Rendering เลื่อนและกระตุกหลุดกึ่งกลาง 100%
+  const drawGeoWarnText = (str, cx, cy, font, fillCol, strokeCol = null, strokeW = 0) => {
+    ctx.save();
+    ctx.font = font;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const tw = ctx.measureText(str).width;
+    const tx = Math.round(cx - tw / 2);
+    const ty = Math.round(cy);
+    if(strokeCol && strokeW > 0){
+      ctx.strokeStyle = strokeCol;
+      ctx.lineWidth = strokeW;
+      ctx.lineJoin = 'round';
+      ctx.strokeText(str, tx, ty);
+    }
+    ctx.fillStyle = fillCol;
+    ctx.fillText(str, tx, ty);
+    ctx.restore();
+  };
+
   if(s.tuktukWarn){
     const tw=s.tuktukWarn,pulse=.5+.5*Math.sin(s.t*18);
-    const baseP=P(tw.x,7.0,0);
-    const warnX=clamp(baseP.x,85,W-85);
+    const boxW=168,boxH=38;
+    const pTarget=P(tw.x,3.6,0);
+    const warnX=clamp(pTarget.x,boxW/2+8,W-boxW/2-8);
     const warnY=H-34+Math.sin(s.t*22)*3;
+    const rectX=Math.round(warnX-boxW/2);
+    const rectY=Math.round(warnY-boxH/2);
     ctx.save();
     ctx.fillStyle=`rgba(225,29,72,${.88+.12*pulse})`;
     ctx.strokeStyle='#fef08a';ctx.lineWidth=3;
-    ctx.beginPath();ctx.roundRect(warnX-80,warnY-20,160,36,10);ctx.fill();ctx.stroke();
-    ctx.font='900 14px Mali,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillStyle='#ffffff';ctx.shadowColor='rgba(0,0,0,0.6)';ctx.shadowBlur=4;
-    ctx.fillText('⚠️ ตุ๊กๆ ซิ่งจากหลัง!',warnX,warnY-4);
-    ctx.font='900 12px Mali,sans-serif';ctx.fillStyle='#fde047';ctx.fillText('▲ ▲ ▲',warnX,warnY+9);
+    ctx.beginPath();ctx.roundRect(rectX,rectY,boxW,boxH,10);ctx.fill();ctx.stroke();
+    drawGeoWarnText('⚠️ ตุ๊กๆ ซิ่งจากหลัง!', warnX, warnY - 5, '900 14px Mali,sans-serif', '#ffffff', 'rgba(0,0,0,0.8)', 2.5);
+    drawGeoWarnText('▲ ▲ ▲ หลบด่วน ▲ ▲ ▲', warnX, warnY + 9, '900 11px Mali,sans-serif', '#fde047', null, 0);
     ctx.restore();
   }
-  const bl=s.state==='PAUSED'?'เล่นต่อ':(s.state==='COUNTDOWN'?'เตรียมพร้อม...':'หยุด');if($('#bp').textContent!==bl)$('#bp').textContent=bl;$('#bp').disabled=!(s.state==='RUN'||s.state==='PAUSED'||s.state==='COUNTDOWN');
+  if(s.taxiWarn){
+    const tw=s.taxiWarn,pulse=.5+.5*Math.sin(s.t*16);
+    const boxW=178,boxH=38;
+    const pTarget=P(tw.x,3.6,0);
+    const warnX=clamp(pTarget.x,boxW/2+8,W-boxW/2-8);
+    const warnY=H-34+Math.sin(s.t*20)*3;
+    const rectX=Math.round(warnX-boxW/2);
+    const rectY=Math.round(warnY-boxH/2);
+    ctx.save();
+    ctx.fillStyle=`rgba(22,163,74,${.88+.12*pulse})`;
+    ctx.strokeStyle='#86efac';ctx.lineWidth=3;
+    ctx.beginPath();ctx.roundRect(rectX,rectY,boxW,boxH,10);ctx.fill();ctx.stroke();
+    drawGeoWarnText('🚕 แท็กซี่เขียวเหลืองมาแล้ว!', warnX, warnY - 5, '900 14px Mali,sans-serif', '#ffffff', 'rgba(0,0,0,0.8)', 2.5);
+    drawGeoWarnText('▲ ▲ ▲ ขึ้นฟรี (อมตะ) ▲ ▲ ▲', warnX, warnY + 9, '900 11px Mali,sans-serif', '#bbf7d0', null, 0);
+    ctx.restore();
+  }
+  const isRunning = (s.state === 'RUN');
+  if($('#btn-settings')){
+    if($('#btn-settings').hidden === isRunning){
+      $('#btn-settings').hidden = !isRunning;
+    }
+  }
+  if($('#btn-skin')){
+    if($('#btn-skin').hidden === isRunning){
+      $('#btn-skin').hidden = !isRunning;
+    }
+  }
+  if($('#bp')){
+    const bl=s.state==='PAUSED'?'เล่นต่อ':(s.state==='COUNTDOWN'?'เตรียมพร้อม...':'หยุด');if($('#bp').textContent!==bl)$('#bp').textContent=bl;$('#bp').disabled=!(s.state==='RUN'||s.state==='PAUSED'||s.state==='COUNTDOWN');
+  }
   const zz=zoneAt(s.dist);let zt='โซน '+(zz+1)+': '+ZN[zz]+' · '+cur.nm;
-  if(s.phase&&s.phase!==PHASES.NORMAL){
+  if(s.isRidingTaxi){
+    zt+=' · 🚖 นั่งแท็กซี่ ('+Math.ceil(s.taxiTimer)+'วิ)';
+  } else if(s.invincibleTimer > 0){
+    zt+=' · 🛡️ อมตะ ('+s.invincibleTimer.toFixed(1)+'วิ)';
+  } else if(s.phase&&s.phase!==PHASES.NORMAL){
     const pName = (s.phase===PHASES.TRANSITION_BUFFER&&s.pendingSpecialPhase) ? ('เตรียมพร้อม: '+PHASE_INFO[s.pendingSpecialPhase].name) : (PHASE_INFO[s.phase]?.name || '');
     if(pName) zt+=' · ⚡ '+pName;
   }
@@ -2883,5 +4822,5 @@ function frame(ms){
   render(S.state==='RUN'?acc/FIXED:1,(S.state==='PAUSED'||S.state==='COUNTDOWN')?0:fd);
   requestAnimationFrame(frame);
 }
-newGame();showMenu();resize();requestAnimationFrame(frame);
+newGame();showMenu();updateHighScoreUI();updateSkinDisplay();resize();requestAnimationFrame(frame);
 })();

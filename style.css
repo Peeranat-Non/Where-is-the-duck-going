@@ -24,13 +24,23 @@ html,body{
   position:relative;
   width:100%;
   height:100%;
+  max-width:100vw;
+  max-height:100vh;
+  margin:0 auto;
+  overflow:hidden;
+  display:flex;
+  justify-content:center;
+  align-items:center;
 }
 
-canvas{
+#c, #game-canvas{
   position:absolute;
   inset:0;
   width:100%;
   height:100%;
+  max-width:100vw;
+  max-height:100vh;
+  object-fit:contain;
   display:block;
   touch-action:none;
 }
@@ -63,12 +73,397 @@ canvas{
   text-align:right;
 }
 
+/* Settings Button & Skin Button (Bottom Right) */
+#btn-settings{
+  position:fixed;
+  right:14px;
+  bottom:14px;
+  z-index:25;
+  padding:10px 16px;
+  font-size:15px;
+  background:rgba(5,40,50,.85);
+  color:var(--ink);
+  border:2px solid var(--duck);
+  border-radius:14px;
+  box-shadow:0 4px 0 #1a1240;
+  cursor:pointer;
+}
+#btn-skin{
+  position:fixed;
+  right:124px;
+  bottom:14px;
+  z-index:25;
+  padding:10px 16px;
+  font-size:15px;
+  background:rgba(5,40,50,.85);
+  color:var(--ink);
+  border:2px solid var(--duck);
+  border-radius:14px;
+  box-shadow:0 4px 0 #1a1240;
+  cursor:pointer;
+}
+#btn-settings[hidden],#btn-skin[hidden]{
+  display:none;
+}
+#btn-settings:active,#btn-skin:active{
+  transform:translateY(2px);
+  box-shadow:0 2px 0 #1a1240;
+}
+
+/* Settings Modals Overlay (Fixed and strictly highest z-index) */
+.settings-modal,
+.settings-modal-overlay,
+#settings-menu,
+#main-menu-settings,
+#in-game-settings{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(4,30,40,.75);
+  padding:16px;
+  z-index:9999;
+}
+.settings-modal[hidden],
+.settings-modal-overlay[hidden],
+#settings-menu[hidden],
+#main-menu-settings[hidden],
+#in-game-settings[hidden]{
+  display:none !important;
+}
+.settings-card{
+  position:relative;
+  width:min(340px,90vw);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:10px;
+  padding:24px 20px 20px;
+}
+#close-settings-btn,
+#close-mm-settings-btn,
+#close-ig-settings-btn,
+.close-modal-btn{
+  position:absolute;
+  top:10px;
+  right:12px;
+  width:32px;
+  height:32px;
+  border-radius:50%;
+  border:2px solid var(--duck);
+  background:rgba(5,40,50,.85);
+  color:var(--duck);
+  font-size:22px;
+  font-weight:700;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  box-shadow:0 2px 0 #1a1240;
+  transition:all .15s ease;
+  padding:0;
+  z-index:10;
+}
+#close-settings-btn:hover,
+#close-mm-settings-btn:hover,
+#close-ig-settings-btn:hover,
+.close-modal-btn:hover{
+  background:var(--duck);
+  color:#1a1240;
+}
+#close-settings-btn:active,
+#close-mm-settings-btn:active,
+#close-ig-settings-btn:active,
+.close-modal-btn:active{
+  transform:translateY(1px);
+  box-shadow:0 1px 0 #1a1240;
+}
+.settings-card h2{
+  margin:0 0 6px;
+  font-size:24px;
+  color:var(--duck);
+  text-shadow:0 2px 0 #1a1240;
+}
+.settings-card .mb{
+  width:100%;
+  font-size:16px;
+  padding:10px 14px;
+}
+
+/* แถวปุ่มปรับเสียงเอฟเฟกต์และเพลงคู่กัน */
+.audio-controls-row{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  width:100%;
+}
+.audio-controls-row .mb{
+  flex:1;
+  min-width:0;
+  padding:10px 6px;
+  font-size:14px;
+  white-space:nowrap;
+}
+
+/* Minimalist Skin Selection Modal */
+#skin-modal{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(4,30,40,.78);
+  padding:16px;
+  z-index:36;
+}
+#skin-modal[hidden]{
+  display:none !important;
+}
+.skin-card{
+  position:relative;
+  width:min(320px,90vw);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:16px;
+  padding:26px 18px 20px;
+}
+#close-skin-btn{
+  position:absolute;
+  top:10px;
+  right:12px;
+  width:32px;
+  height:32px;
+  border-radius:50%;
+  border:2px solid var(--duck);
+  background:rgba(5,40,50,.85);
+  color:var(--duck);
+  font-size:22px;
+  font-weight:700;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  box-shadow:0 2px 0 #1a1240;
+  transition:all .15s ease;
+  padding:0;
+  z-index:10;
+}
+#close-skin-btn:hover{
+  background:var(--duck);
+  color:#1a1240;
+}
+#close-skin-btn:active{
+  transform:translateY(1px);
+  box-shadow:0 1px 0 #1a1240;
+}
+.skin-carousel{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:14px;
+  width:100%;
+}
+.skin-arrow{
+  background:rgba(5,40,50,.85);
+  border:2px solid var(--duck);
+  color:var(--duck);
+  font-size:22px;
+  padding:10px 14px;
+  border-radius:14px;
+  cursor:pointer;
+  box-shadow:0 3px 0 #1a1240;
+  transition:all .15s ease;
+  user-select:none;
+}
+.skin-arrow:hover{
+  background:var(--duck);
+  color:#1a1240;
+}
+.skin-arrow:active{
+  transform:translateY(2px);
+  box-shadow:0 1px 0 #1a1240;
+}
+.skin-preview-wrap{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:10px;
+}
+#skin-preview-canvas{
+  width:150px;
+  height:150px;
+  border-radius:20px;
+  border:3px solid var(--duck);
+  background:#0e4a5d;
+  box-shadow:0 6px 16px rgba(0,0,0,.45);
+}
+.skin-name-display{
+  font-size:18px;
+  font-weight:700;
+  color:var(--duck);
+  text-shadow:0 2px 0 #1a1240;
+  min-height:24px;
+  text-align:center;
+}
+#skin-action-btn{
+  width:100%;
+  padding:12px 16px;
+  font-size:16px;
+}
+#skin-action-btn.active-skin-btn{
+  background:#16a34a;
+  color:#fff;
+  box-shadow:0 4px 0 #14532d;
+}
+#skin-action-btn:disabled, #skin-select-btn:disabled{
+  background-color:#64748b !important;
+  color:#cbd5e1 !important;
+  border-color:#94a3b8 !important;
+  box-shadow:0 4px 0 #334155 !important;
+  cursor:not-allowed !important;
+  opacity:0.75;
+  transform:none !important;
+}
+
+/* Best Score Badge on Main Menu */
+.best-badge{
+  margin:4px auto 8px;
+  padding:6px 16px;
+  background:rgba(5,40,50,.85);
+  border:2px solid var(--duck);
+  border-radius:20px;
+  color:var(--duck);
+  font-size:clamp(14px,3.8vw,17px);
+  font-weight:700;
+  box-shadow:0 3px 0 #1a1240;
+}
+.best-badge span{
+  color:#fff;
+}
+
+/* How to play revamp */
+.how-to-play-card{
+  max-width:480px;
+  max-height:85vh;
+  display:flex;
+  flex-direction:column;
+  padding:20px 22px;
+  text-align:left;
+}
+#hw[hidden]{
+  display:none !important;
+}
+.how-to-play-card h1{
+  text-align:center;
+  margin-bottom:8px;
+}
+.how-to-scroll{
+  overflow-y:auto;
+  margin:10px 0;
+  padding-right:6px;
+  max-height:55vh;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,0,0,0.3) transparent;
+}
+.how-to-scroll::-webkit-scrollbar{
+  width: 6px;
+}
+.how-to-scroll::-webkit-scrollbar-track{
+  background: transparent;
+}
+.how-to-scroll::-webkit-scrollbar-thumb{
+  background: rgba(0,0,0,0.3);
+  border-radius: 10px;
+}
+.how-to-scroll::-webkit-scrollbar-thumb:hover{
+  background: rgba(0,0,0,0.5);
+}
+
+/* คอนเทนเนอร์ปุ่มแนบไฟล์เสียงมุมล่างซ้ายของ Main Menu */
+#bgm-upload-container {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+  font-family: inherit;
+}
+#bgm-upload-btn {
+  background: rgba(255, 255, 255, 0.85);
+  color: #1e293b;
+  border: 1.5px solid rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+#bgm-upload-btn:hover {
+  background: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+#bgm-file-name {
+  font-size: 11px;
+  color: #f1f5f9;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hw-section{
+  margin-bottom:14px;
+}
+.hw-section h3{
+  margin:0 0 4px;
+  font-size:16px;
+  color:var(--duck);
+}
+.hw-section p{
+  margin:0;
+  font-size:13.5px;
+  line-height:1.5;
+}
+.hw-section ul{
+  margin:4px 0 0 16px;
+  padding:0;
+  font-size:13.5px;
+  line-height:1.6;
+}
+.hw-warning{
+  background:rgba(232,65,47,.22);
+  border:2px solid #e8412f;
+  border-radius:12px;
+  padding:10px 12px;
+  margin-top:10px;
+  font-size:12.5px;
+  line-height:1.55;
+  color:#ffe8e5;
+}
+#hx{
+  display:block;
+  margin:20px auto 0;
+  width:min(260px,80%);
+  text-align:center;
+}
+
 #tools{
   position:absolute;
   right:10px;
   bottom:10px;
   display:flex;
   gap:8px;
+  z-index:10;
 }
 
 button{
@@ -109,6 +504,7 @@ button:focus-visible,input:focus-visible{
   justify-content:center;
   background:rgba(4,30,40,.55);
   padding:16px;
+  z-index:35;
 }
 
 #ov[hidden],#tune[hidden]{
@@ -167,13 +563,113 @@ button:focus-visible,input:focus-visible{
 #mm{
   position:absolute;
   inset:0;
+  width:100vw;
+  height:100vh;
+  max-width:100%;
+  max-height:100%;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  gap:10px;
+  padding:16px;
+  box-sizing:border-box;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  background:linear-gradient(rgba(4,30,60,.3),rgba(4,30,40,.72));
+  z-index:30;
+}
+
+/* ปุ่มมุมจอหน้าเมนูหลัก (Main Menu Corner Buttons) */
+.mm-corner-btn{
+  position:absolute;
+  top:16px;
+  padding:8px 14px;
+  font-size:14px;
+  font-weight:700;
+  border-radius:12px;
+  border:2px solid var(--duck);
+  background:rgba(5,40,50,.85);
+  color:var(--duck);
+  cursor:pointer;
+  box-shadow:0 3px 0 #1a1240;
+  transition:all .15s ease;
+  z-index:35;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.mm-corner-btn:hover{
+  background:var(--duck);
+  color:#1a1240;
+  transform:translateY(-1px);
+}
+.mm-corner-btn:active{
+  transform:translateY(1px);
+  box-shadow:0 1px 0 #1a1240;
+}
+.mm-corner-tl{
+  left:16px;
+}
+.mm-corner-tr{
+  right:16px;
+}
+
+/* ปุ่มเล่นต่อเมื่อมีเกมกำลังเล่นค้างอยู่ (Dynamic Active Continue Button) */
+.btn-continue-active {
+  background-color: #4CAF50 !important;
+  color: white !important;
+  border-color: #81C784 !important;
+  box-shadow: 0 4px 0 #2E7D32 !important;
+  cursor: pointer !important;
+  opacity: 1 !important;
+}
+.btn-continue-active:hover {
+  background-color: #43A047 !important;
+  transform: translateY(-1px);
+}
+.btn-continue-active:active {
+  transform: translateY(2px) !important;
+  box-shadow: 0 1px 0 #2E7D32 !important;
+}
+
+/* Game Over 4-Stats Grid */
+.go-stats-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin:14px 0 18px;
+  width:100%;
+}
+.go-stat-card{
+  background:rgba(5,30,42,.75);
+  border:2px solid rgba(255,207,46,.4);
+  border-radius:14px;
+  padding:10px 8px;
   display:flex;
   flex-direction:column;
   align-items:center;
   justify-content:center;
-  gap:10px;
-  padding:16px;
-  background:linear-gradient(rgba(4,30,60,.3),rgba(4,30,40,.72));
+  gap:4px;
+}
+.go-stat-card.best{
+  border-color:var(--duck);
+  background:rgba(14,74,93,.85);
+}
+.go-stat-label{
+  font-size:13px;
+  color:#a5f3fc;
+  font-weight:500;
+  opacity:.9;
+}
+.go-stat-val{
+  font-size:20px;
+  font-weight:700;
+  color:#ffffff;
+  line-height:1.2;
+}
+.go-stat-card.best .go-stat-val{
+  color:var(--duck);
 }
 
 #mm[hidden]{
