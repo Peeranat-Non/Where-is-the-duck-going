@@ -1733,6 +1733,20 @@ if($('#sm-menu')) $('#sm-menu').onclick = ()=>{
   showMenu();
 };
 
+// ตัวแปรส่วนกลางสำหรับเก็บไฟล์เสียงที่ผู้ใช้แนบชั่วคราว
+window.uploadedBgmFile = null;
+const bgmUploadInput = $('#bgm-upload-input');
+const bgmFileName = $('#bgm-file-name');
+if(bgmUploadInput && bgmFileName){
+  bgmUploadInput.addEventListener('change', (event) => {
+    const file = event.target.files && event.target.files[0];
+    if(file){
+      window.uploadedBgmFile = file;
+      bgmFileName.textContent = file.name;
+    }
+  });
+}
+
 // ผูกการทำงานปุ่มของ Skin Selection Menu
 function handleCloseSkinModal(){
   closeSkinModal();
@@ -3238,7 +3252,7 @@ function drawObs(o,z){
     drawTaxi(0, -jumpY * u, u, o, jumpY);
   }
   ctx.restore();
-  if(dbg)dbgBox(o,z);
+  if(dbg && !o.isKnockedOut) dbgBox(o,z);
 }
 
 /* วาดรถแท็กซี่เขียว-เหลือง กรุงเทพมหานคร (Bangkok Taxi ตามภาพ Reference IMG_1187.png เป๊ะ 100%) */
@@ -3382,13 +3396,15 @@ function drawVic(v,z,t){
   if(v.isKnockedOut && v.rot) ctx.rotate(v.rot);
   ctx.lineCap='round';ctx.lineJoin='round';
 
-  // 1. วงคลื่นน้ำกระเพื่อมระลอกเขียวช่วยชีวิต (Rescue Aura Ripple)
-  ctx.fillStyle=`rgba(57,255,20,${.22+.18*pl})`;ell(0,0,(1.15+.15*pl)*u,.44*u);
-  ctx.strokeStyle='#39ff14';ctx.lineWidth=Math.max(0.8,vw*0.85);ctx.beginPath();ctx.ellipse(0,0,(1.15+.15*pl)*u,.44*u,0,0,7);ctx.stroke();
+  // 1. วงคลื่นน้ำกระเพื่อมระลอกเขียวช่วยชีวิต (Rescue Aura Ripple - แสดงเฉพาะตอนยังไม่โดนชนปลิว)
+  if(!v.isKnockedOut){
+    ctx.fillStyle=`rgba(57,255,20,${.22+.18*pl})`;ell(0,0,(1.15+.15*pl)*u,.44*u);
+    ctx.strokeStyle='#39ff14';ctx.lineWidth=Math.max(0.8,vw*0.85);ctx.beginPath();ctx.ellipse(0,0,(1.15+.15*pl)*u,.44*u,0,0,7);ctx.stroke();
 
-  // วงคลื่นฟองน้ำสีขาวระลอกกลาง
-  ctx.strokeStyle='rgba(255,255,255,.75)';ctx.lineWidth=Math.max(0.6,subVw);
-  ctx.beginPath();ctx.ellipse(0,0,.8*u,.28*u,0,0,7);ctx.stroke();
+    // วงคลื่นฟองน้ำสีขาวระลอกกลาง
+    ctx.strokeStyle='rgba(255,255,255,.75)';ctx.lineWidth=Math.max(0.6,subVw);
+    ctx.beginPath();ctx.ellipse(0,0,.8*u,.28*u,0,0,7);ctx.stroke();
+  }
 
   // 2. หยาดน้ำกระเซ็นและละอองน้ำรอบตัว (Water Splash Droplets)
   const drops=[
@@ -3519,19 +3535,21 @@ function drawVic(v,z,t){
     circ(-.25*u,-.62*u,.05*u);circ(.25*u,-.62*u,.05*u);
   }
 
-  // 7. ป้ายข้อความขอความช่วยเหลือ และลูกศรชี้ลอยอยู่เหนือหัว
-  const by=-1.35*u-Math.abs(Math.sin(t*5))*.15*u;
-  TRI([[-.26*u,by-.36*u],[.26*u,by-.36*u],[0,by]],'#39ff14',Math.max(0.8,vw*0.85));
-  if(u>14){
-    const msg = v.txt || 'ช่วยด้วย';
-    ctx.font=`700 ${Math.max(12,.28*u)}px Mali,sans-serif`;
-    ctx.textAlign='center';ctx.lineWidth=Math.max(1.5,Math.min(3,u*0.03));
-    ctx.strokeStyle=INK;ctx.strokeText(msg,0,by-.55*u);
-    ctx.fillStyle='#fff';ctx.fillText(msg,0,by-.55*u);
+  // 7. ป้ายข้อความขอความช่วยเหลือ และลูกศรชี้ลอยอยู่เหนือหัว (แสดงเฉพาะตอนรอความช่วยเหลือ)
+  if(!v.isKnockedOut){
+    const by=-1.35*u-Math.abs(Math.sin(t*5))*.15*u;
+    TRI([[-.26*u,by-.36*u],[.26*u,by-.36*u],[0,by]],'#39ff14',Math.max(0.8,vw*0.85));
+    if(u>14){
+      const msg = v.txt || 'ช่วยด้วย';
+      ctx.font=`700 ${Math.max(12,.28*u)}px Mali,sans-serif`;
+      ctx.textAlign='center';ctx.lineWidth=Math.max(1.5,Math.min(3,u*0.03));
+      ctx.strokeStyle=INK;ctx.strokeText(msg,0,by-.55*u);
+      ctx.fillStyle='#fff';ctx.fillText(msg,0,by-.55*u);
+    }
   }
 
   ctx.restore();
-  if(dbg)dbgCircle(v.x,z,RESCUE.radius,'#7dff9a');
+  if(dbg && !v.isKnockedOut) dbgCircle(v.x,z,RESCUE.radius,'#7dff9a');
 }
 
 /* ---------- โลก: Arcade ---------- */
@@ -4630,7 +4648,7 @@ function render(al,fd){
   post();
   drawWakes(zoff);
   const pl=.5+.5*Math.sin(s.t*10);
-  s.obs.forEach(o=>{if(o.type==='speedboat'&&o.z+zoff<-2){const zb=o.z+zoff-1.4;hq(o.x-.85,o.x+.85,3,zb,0,`rgba(255,45,85,${.14+.16*pl})`);poly(P(o.x-.5,zb,0),P(o.x+.5,zb,0),P(o.x+2,zb-5,0),P(o.x-2,zb-5,0),'rgba(255,255,255,.5)')}});
+  s.obs.forEach(o=>{if(o.type==='speedboat' && !o.isKnockedOut && o.z+zoff<-2){const zb=o.z+zoff-1.4;hq(o.x-.85,o.x+.85,3,zb,0,`rgba(255,45,85,${.14+.16*pl})`);poly(P(o.x-.5,zb,0),P(o.x+.5,zb,0),P(o.x+2,zb-5,0),P(o.x-2,zb-5,0),'rgba(255,255,255,.5)')}});
   if(s.tuktukWarn){
     const tw=s.tuktukWarn,pulse=.5+.5*Math.sin(s.t*16);
     hq(tw.x-.85,tw.x+.85,7.2,3.2,0,`rgba(255,30,80,${.28+.28*pulse})`);

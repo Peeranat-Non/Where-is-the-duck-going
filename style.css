@@ -366,6 +366,60 @@ html,body{
   margin:10px 0;
   padding-right:6px;
   max-height:55vh;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,0,0,0.3) transparent;
+}
+.how-to-scroll::-webkit-scrollbar{
+  width: 6px;
+}
+.how-to-scroll::-webkit-scrollbar-track{
+  background: transparent;
+}
+.how-to-scroll::-webkit-scrollbar-thumb{
+  background: rgba(0,0,0,0.3);
+  border-radius: 10px;
+}
+.how-to-scroll::-webkit-scrollbar-thumb:hover{
+  background: rgba(0,0,0,0.5);
+}
+
+/* คอนเทนเนอร์ปุ่มแนบไฟล์เสียงมุมล่างซ้ายของ Main Menu */
+#bgm-upload-container {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+  font-family: inherit;
+}
+#bgm-upload-btn {
+  background: rgba(255, 255, 255, 0.85);
+  color: #1e293b;
+  border: 1.5px solid rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+#bgm-upload-btn:hover {
+  background: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+#bgm-file-name {
+  font-size: 11px;
+  color: #f1f5f9;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .hw-section{
   margin-bottom:14px;
