@@ -36,8 +36,11 @@ app.get('/', (req, res) => {
   res.sendFile(join(__dirname, 'index.html'));
 });
 
-// Fallback to index.html for SPA/client routing
+// Fallback to index.html for SPA/client routing (excluding missing asset files)
 app.get('*', (req, res) => {
+  if (req.path.includes('.')) {
+    return res.status(404).send('Not Found');
+  }
   res.sendFile(join(__dirname, 'index.html'));
 });
 

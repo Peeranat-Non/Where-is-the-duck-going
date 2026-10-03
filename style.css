@@ -192,19 +192,90 @@ html,body{
   padding:10px 14px;
 }
 
-/* แถวปุ่มปรับเสียงเอฟเฟกต์และเพลงคู่กัน */
+/* Audio Controls Row & Buttons (Side-by-side 50/50 split) */
 .audio-controls-row{
   display:flex;
-  justify-content:space-between;
   gap:10px;
   width:100%;
+  justify-content:space-between;
+  margin-bottom:15px;
+  box-sizing:border-box;
 }
-.audio-controls-row .mb{
+
+.audio-btn-box{
   flex:1;
   min-width:0;
-  padding:10px 6px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  background:var(--duck,#FFD500);
+  border:2px solid #1A1240;
+  border-radius:8px;
+  padding:10px;
+  box-shadow:0 4px 0 #1A1240;
+  box-sizing:border-box;
+  cursor:pointer;
+  transition:transform 0.1s, box-shadow 0.1s;
+}
+
+.audio-label{
+  font-weight:bold;
   font-size:14px;
+  margin-bottom:5px;
+  cursor:pointer;
+  color:#1A1240;
+  user-select:none;
+  text-align:center;
   white-space:nowrap;
+  width:100%;
+}
+
+.audio-label:hover{
+  opacity:0.85;
+}
+
+.sfx-volume-slider,
+.bgm-volume-slider{
+  -webkit-appearance:none;
+  appearance:none;
+  width:100%;
+  height:6px;
+  background:rgba(26,18,64,0.25);
+  border-radius:4px;
+  outline:none;
+  margin:2px 0 0 0;
+  cursor:pointer;
+  transition:background .2s;
+}
+
+.sfx-volume-slider:hover,
+.bgm-volume-slider:hover{
+  background:rgba(26,18,64,0.4);
+}
+
+.sfx-volume-slider::-webkit-slider-thumb,
+.bgm-volume-slider::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  appearance:none;
+  width:16px;
+  height:16px;
+  border-radius:50%;
+  background:#ffffff;
+  border:2px solid #1A1240;
+  cursor:pointer;
+  box-shadow:0 1px 3px rgba(0,0,0,0.3);
+}
+
+.sfx-volume-slider::-moz-range-thumb,
+.bgm-volume-slider::-moz-range-thumb{
+  width:16px;
+  height:16px;
+  border-radius:50%;
+  background:#ffffff;
+  border:2px solid #1A1240;
+  cursor:pointer;
+  box-shadow:0 1px 3px rgba(0,0,0,0.3);
 }
 
 /* Minimalist Skin Selection Modal */
@@ -383,44 +454,6 @@ html,body{
   background: rgba(0,0,0,0.5);
 }
 
-/* คอนเทนเนอร์ปุ่มแนบไฟล์เสียงมุมล่างซ้ายของ Main Menu */
-#bgm-upload-container {
-  position: absolute;
-  bottom: 20px;
-  left: 20px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  z-index: 10;
-  font-family: inherit;
-}
-#bgm-upload-btn {
-  background: rgba(255, 255, 255, 0.85);
-  color: #1e293b;
-  border: 1.5px solid rgba(0, 0, 0, 0.15);
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  transition: all 0.2s ease;
-  user-select: none;
-}
-#bgm-upload-btn:hover {
-  background: #ffffff;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-}
-#bgm-file-name {
-  font-size: 11px;
-  color: #f1f5f9;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-  max-width: 140px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .hw-section{
   margin-bottom:14px;
 }

@@ -71,9 +71,11 @@ const AUDIO_PATHS={
   taxi_horn:'assets/sfx_taxi_horn.mp3'
 };
 
+let globalSfxVolume = 1.0;
+
 class SoundManager{
   constructor(){
-    this.enabled=true;this.ctx=null;this.pool={};
+    this.enabled=true;this.ctx=null;this.masterGain=null;this.pool={};
     for(const[k,p]of Object.entries(AUDIO_PATHS)){
       try{const a=new Audio(p);a.preload='none';this.pool[k]=a}catch(e){}
     }
@@ -81,7 +83,12 @@ class SoundManager{
   init(){
     if(!this.ctx){
       const AC=window.AudioContext||window.webkitAudioContext;
-      if(AC)this.ctx=new AC();
+      if(AC){
+        this.ctx=new AC();
+        this.masterGain=this.ctx.createGain();
+        this.masterGain.gain.setValueAtTime(globalSfxVolume, this.ctx.currentTime);
+        this.masterGain.connect(this.ctx.destination);
+      }
     }
     if(this.ctx&&this.ctx.state==='suspended')this.ctx.resume();
   }
@@ -91,7 +98,7 @@ class SoundManager{
     const a=this.pool[k];
     if(a&&a.src){
       try{
-        const cl=a.cloneNode();cl.volume=.45;
+        const cl=a.cloneNode();cl.volume=Math.max(0, Math.min(1, .45 * globalSfxVolume));
         const p=cl.play();
         if(p){p.catch(()=>this.synth(k));return}
       }catch(e){}
@@ -101,7 +108,8 @@ class SoundManager{
   synth(t){
     if(!this.ctx)return;
     const ctx=this.ctx,now=ctx.currentTime,osc=ctx.createOscillator(),gain=ctx.createGain();
-    osc.connect(gain);gain.connect(ctx.destination);
+    const dest = this.masterGain || ctx.destination;
+    osc.connect(gain);gain.connect(dest);
     if(t==='click'){
       osc.type='triangle';osc.frequency.setValueAtTime(600,now);osc.frequency.exponentialRampToValueAtTime(300,now+.05);
       gain.gain.setValueAtTime(.2,now);gain.gain.exponentialRampToValueAtTime(.001,now+.05);
@@ -1138,6 +1146,24 @@ function savePrev(){const s=S;s.jump.py=s.jump.y;s.duck.px=s.duck.x;s.tube.px=s.
 /* ---------- Overlay / สถานะ ---------- */
 const mm=$('#mm'),hw=$('#hw');
 let isSfxEnabled=true, isBgmEnabled=true, snd=true;
+
+/* ---------- Background Music (BGM: thai1.mp3) ---------- */
+let bgmAudio = new Audio('thai1.mp3');
+bgmAudio.loop = true;
+bgmAudio.volume = 0.5;
+let currentBgmVolume = 0.5;
+
+function playBgm(){
+  if(bgmAudio && isBgmEnabled){
+    bgmAudio.play().catch(()=>{});
+  }
+}
+
+function pauseBgm(){
+  if(bgmAudio){
+    bgmAudio.pause();
+  }
+}
 let countdownTimer=null;
 const cdEl=$('#cd'),cdnEl=$('#cdn');
 function cancelCountdown(){
@@ -1230,6 +1256,7 @@ function startNew(){
 }
 function resume(){
   if(S.state!=='PAUSED')return;
+  if(isBgmEnabled) playBgm();
   cancelCountdown();
   S.state='COUNTDOWN';
   mm.hidden=true;
@@ -1282,36 +1309,62 @@ function updateSettingsUI(){
   const testText = '🛡️ โหมดทดสอบ: ' + (testMode ? 'เปิด 🟢' : 'ปิด ⚪');
   const hitboxText = '🎯 เปิด/ปิดฮิตบ็อกซ์: ' + (dbg ? 'เปิด' : 'ปิด');
 
+  // ป้ายข้อความเสียง SFX และ BGM ใน 50/50 audio-btn-box
+  document.querySelectorAll('.sfx-label, #btn-sfx-text, #igs-sfx-text, #mms-sfx, #igs-sfx, #sm-sfx').forEach(el => {
+    el.textContent = sfxText;
+  });
+  document.querySelectorAll('.bgm-label, #btn-bgm-text, #igs-bgm-text, #mms-bgm, #igs-bgm, #sm-bgm').forEach(el => {
+    el.textContent = bgmText;
+  });
+
   // Modal 1: เมนูตั้งค่าหน้าหลัก (Main Menu Settings)
-  if($('#mms-sfx')) $('#mms-sfx').textContent = sfxText;
-  if($('#mms-bgm')) $('#mms-bgm').textContent = bgmText;
   if($('#mms-test')) $('#mms-test').textContent = testText;
   if($('#mms-hitbox')) $('#mms-hitbox').textContent = hitboxText;
 
   // Modal 2: เมนูตั้งค่าระหว่างเล่นเกม (In-Game Settings)
-  if($('#igs-sfx')) $('#igs-sfx').textContent = sfxText;
-  if($('#igs-bgm')) $('#igs-bgm').textContent = bgmText;
   if($('#igs-test')) $('#igs-test').textContent = testText;
   if($('#igs-hitbox')) $('#igs-hitbox').textContent = hitboxText;
 
   // รองรับ ID เดิม
-  if($('#sm-sfx')) $('#sm-sfx').textContent = sfxText;
-  if($('#sm-bgm')) $('#sm-bgm').textContent = bgmText;
   if($('#sm-test')) $('#sm-test').textContent = testText;
   if($('#sm-hitbox')) $('#sm-hitbox').textContent = hitboxText;
   if($('#sm-sound')) $('#sm-sound').textContent = '🔊 เปิด/ปิดเสียง: ' + (isSfxEnabled ? 'เปิด' : 'ปิด');
 }
 
 function toggleSfx(){
-  isSfxEnabled = !isSfxEnabled;
-  snd = isSfxEnabled;
-  sfx.enabled = isSfxEnabled;
+  if(isSfxEnabled){
+    isSfxEnabled = false;
+    snd = false;
+    sfx.enabled = false;
+    if(sfx && sfx.masterGain && sfx.ctx){
+      sfx.masterGain.gain.setValueAtTime(0, sfx.ctx.currentTime);
+    }
+    document.querySelectorAll('.sfx-volume-slider').forEach(s => s.value = 0);
+  } else {
+    isSfxEnabled = true;
+    snd = true;
+    sfx.enabled = true;
+    if(sfx && sfx.masterGain && sfx.ctx){
+      sfx.masterGain.gain.setValueAtTime(globalSfxVolume, sfx.ctx.currentTime);
+    }
+    document.querySelectorAll('.sfx-volume-slider').forEach(s => s.value = globalSfxVolume);
+  }
   updateSettingsUI();
 }
 
 function toggleBgm(){
-  // สลับสถานะ boolean เท่านั้น (ไม่มีการสร้างหรือเล่นไฟล์เสียง BGM ใดๆ ทั้งสิ้น)
-  isBgmEnabled = !isBgmEnabled;
+  if(isBgmEnabled){
+    isBgmEnabled = false;
+    if(bgmAudio) bgmAudio.pause();
+    document.querySelectorAll('.bgm-volume-slider').forEach(s => s.value = 0);
+  } else {
+    isBgmEnabled = true;
+    if(bgmAudio){
+      bgmAudio.volume = currentBgmVolume;
+      bgmAudio.play().catch(()=>{});
+    }
+    document.querySelectorAll('.bgm-volume-slider').forEach(s => s.value = currentBgmVolume);
+  }
   updateSettingsUI();
 }
 
@@ -1594,6 +1647,7 @@ function toggleTestMode(){
 // ฟังก์ชันเริ่มเกมใหม่พร้อมระบบยืนยันในปุ่ม (Two-Tap Confirmation - ปลอดภัย 100% ไม่ใช้ window.confirm)
 function handleStartGame(e){
   if(e && e.preventDefault) e.preventDefault();
+  if(isBgmEnabled) playBgm();
   const btn = (e && e.currentTarget) || (e && e.target && e.target.closest('button')) || ($('#sm-restart') || $('#ms'));
   const isMainMenuBtn = (btn && btn.id === 'ms');
 
@@ -1733,19 +1787,69 @@ if($('#sm-menu')) $('#sm-menu').onclick = ()=>{
   showMenu();
 };
 
-// ตัวแปรส่วนกลางสำหรับเก็บไฟล์เสียงที่ผู้ใช้แนบชั่วคราว
-window.uploadedBgmFile = null;
-const bgmUploadInput = $('#bgm-upload-input');
-const bgmFileName = $('#bgm-file-name');
-if(bgmUploadInput && bgmFileName){
-  bgmUploadInput.addEventListener('change', (event) => {
-    const file = event.target.files && event.target.files[0];
-    if(file){
-      window.uploadedBgmFile = file;
-      bgmFileName.textContent = file.name;
+// คลิกที่ .audio-btn-box เพื่อเปิด/ปิดเสียง แต่ละเว้นการคลิกบน <input type="range">
+document.querySelectorAll('.audio-btn-box').forEach(box => {
+  box.addEventListener('click', (e) => {
+    if (e.target.closest('input[type="range"]')) return;
+    if (box.id === 'box-sfx' || box.id.includes('sfx') || box.querySelector('.sfx-volume-slider')) {
+      toggleSfx();
+    } else if (box.id === 'box-bgm' || box.id.includes('bgm') || box.querySelector('.bgm-volume-slider')) {
+      toggleBgm();
     }
   });
-}
+});
+
+// ควบคุมและซิงค์สไลเดอร์ระดับเสียง SFX ข้าม Modal
+const sfxSliders = document.querySelectorAll('.sfx-volume-slider');
+sfxSliders.forEach(slider => {
+  slider.addEventListener('input', function(){
+    const val = parseFloat(this.value);
+    globalSfxVolume = val;
+    if(val > 0 && !isSfxEnabled){
+      isSfxEnabled = true;
+      snd = true;
+      sfx.enabled = true;
+      updateSettingsUI();
+    } else if(val === 0 && isSfxEnabled){
+      isSfxEnabled = false;
+      snd = false;
+      sfx.enabled = false;
+      updateSettingsUI();
+    }
+    if(sfx && sfx.masterGain && sfx.ctx){
+      sfx.masterGain.gain.setValueAtTime(isSfxEnabled ? globalSfxVolume : 0, sfx.ctx.currentTime);
+    }
+    sfxSliders.forEach(s => {
+      if(s !== this) s.value = val;
+    });
+  });
+});
+
+// ควบคุมและซิงค์สไลเดอร์ระดับเสียง BGM ข้าม Modal
+const bgmSliders = document.querySelectorAll('.bgm-volume-slider');
+bgmSliders.forEach(slider => {
+  slider.addEventListener('input', function(){
+    const val = parseFloat(this.value);
+    if(val > 0){
+      currentBgmVolume = val;
+      if(!isBgmEnabled){
+        isBgmEnabled = true;
+        if(bgmAudio) bgmAudio.play().catch(()=>{});
+        updateSettingsUI();
+      }
+    } else if(val === 0 && isBgmEnabled){
+      isBgmEnabled = false;
+      if(bgmAudio) bgmAudio.pause();
+      updateSettingsUI();
+    }
+    if(bgmAudio){
+      bgmAudio.volume = val;
+    }
+    bgmSliders.forEach(s => {
+      if(s !== this) s.value = val;
+    });
+  });
+});
 
 // ผูกการทำงานปุ่มของ Skin Selection Menu
 function handleCloseSkinModal(){
@@ -4678,24 +4782,29 @@ function render(al,fd){
   const d=s.duck,t=s.tube;
   const jy=lerp(s.jump.py,s.jump.y,run?al:1);
   const hb = getPlayerHitbox(s, run ? al : 1);
-  const duckSortZ = (jy > 0.08) ? (hb.duck.z + 0.35) : hb.duck.z;
+  // ยึดตำแหน่งระนาบพื้นดินเชิงตรรกะ (Logical Ground Z/Y) ไม่บวก offset ตอนกระโดด เพื่อคงการจัดลำดับ Z-sorting ให้ถูกต้อง 100%
+  const duckGroundY = hb.duck.z;
 
-  D_QUEUE.length=0;
-  for(let i=0;i<s.obs.length;i++){const o=s.obs[i];D_QUEUE.push({z:o.z+zoff,f:()=>drawObs(o,o.z+zoff)})}
-  for(let i=0;i<s.vic.length;i++){const v=s.vic[i];D_QUEUE.push({z:v.z+zoff,f:()=>drawVic(v,v.z+zoff,s.t)})}
+  // 1. สร้าง Unified Render Queue รวม Player, Obstacles และ People ทุกเฟรม
+  const renderQueue = [];
+  for(let i=0;i<s.obs.length;i++){
+    const o=s.obs[i];
+    renderQueue.push({y: o.z+zoff, draw: ()=>drawObs(o,o.z+zoff)});
+  }
+  for(let i=0;i<s.vic.length;i++){
+    const v=s.vic[i];
+    renderQueue.push({y: v.z+zoff, draw: ()=>drawVic(v,v.z+zoff,s.t)});
+  }
   if(s.isRidingTaxi){
-    // ขยายขนาดตัวรถแท็กซี่ให้ใหญ่เต็มคัน สมจริงระดับรถยนต์จริง (Full-sized Vehicle Scale)
-    // โดยไม่กระทบต่อขนาดปกติของเป็ดและห่วงยางหลังหมดเวลาบัฟ
     const taxiScale = 1.95;
     const taxiU = hb.duck.pd.s * taxiScale;
-    D_QUEUE.push({z:hb.duck.z, f:()=>{
+    renderQueue.push({y: hb.duck.z, draw: ()=>{
       drawTaxi(hb.duck.pd.x, hb.duck.pd.y - jy * taxiU, taxiU, null, jy);
     }});
   } else {
-    // กะพริบถี่ๆ และแสดงเกราะสะท้อนแสงช่วงสถานะอมตะหลังลงจากแท็กซี่ (Post-Taxi Invincibility I-Frames)
     const isInvincible = s.invincibleTimer > 0;
     const blinkAlpha = isInvincible ? ((Math.floor(s.t * 22) % 2 === 0) ? 0.35 : 0.85) : 1.0;
-    D_QUEUE.push({z:duckSortZ,f:()=>{
+    renderQueue.push({y: duckGroundY, draw: ()=>{
       if(isInvincible){
         ctx.save();
         ctx.globalAlpha = blinkAlpha;
@@ -4709,7 +4818,7 @@ function render(al,fd){
       drawDuck(hb.duck.pd,clamp(d.vx*.03,-.25,.25),jy);
       if(isInvincible){ ctx.restore(); }
     }});
-    D_QUEUE.push({z:hb.tube.z,f:()=>{
+    renderQueue.push({y: hb.tube.z, draw: ()=>{
       if(isInvincible){ ctx.save(); ctx.globalAlpha = blinkAlpha; }
       drawRope({x:hb.duck.pd.x,y:hb.duck.pd.y-jy*hb.duck.pd.s,s:hb.duck.pd.s},{x:hb.tube.pt.x,y:hb.tube.pt.y-jy*hb.tube.pt.s,s:hb.tube.pt.s},t.T);
       drawTube(hb.tube.pt,clamp(t.vx*.04,-.3,.3),s.pass,jy);
@@ -4717,8 +4826,9 @@ function render(al,fd){
     }});
   }
 
-  D_QUEUE.sort((a,b)=>a.z-b.z);
-  for(let i=0;i<D_QUEUE.length;i++)D_QUEUE[i].f();
+  // 2. เรียงลำดับตามตำแหน่งพื้นดิน a.y - b.y อย่างเด็ดขาด (Far to Near)
+  renderQueue.sort((a,b)=>a.y-b.y);
+  for(let i=0;i<renderQueue.length;i++)renderQueue[i].draw();
   drawSplashes(zoff);
   if(dbg){dbgCircle(hb.duck.x,hb.duck.z,hb.duck.r,'#3bd4ff',0);dbgCircle(hb.tube.x,hb.tube.z,hb.tube.r,'#ffe23b',0)}
   if(s.slow>0){ctx.fillStyle='rgba(255,255,255,.14)';ctx.fillRect(-20,-20,W+40,H+40)}
