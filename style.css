@@ -616,7 +616,6 @@ button:focus-visible,input:focus-visible{
 /* ปุ่มมุมจอหน้าเมนูหลัก (Main Menu Corner Buttons) */
 .mm-corner-btn{
   position:absolute;
-  top:16px;
   padding:8px 14px;
   font-size:14px;
   font-weight:700;
@@ -642,10 +641,20 @@ button:focus-visible,input:focus-visible{
   box-shadow:0 1px 0 #1a1240;
 }
 .mm-corner-tl{
+  top:16px;
   left:16px;
 }
 .mm-corner-tr{
+  top:16px;
   right:16px;
+}
+.mm-corner-br{
+  bottom:16px;
+  right:16px;
+}
+.mm-corner-bl{
+  bottom:16px;
+  left:16px;
 }
 
 /* ปุ่มเล่นต่อเมื่อมีเกมกำลังเล่นค้างอยู่ (Dynamic Active Continue Button) */
