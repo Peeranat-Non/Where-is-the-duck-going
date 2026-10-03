@@ -1148,7 +1148,7 @@ const mm=$('#mm'),hw=$('#hw');
 let isSfxEnabled=true, isBgmEnabled=true, snd=true;
 
 /* ---------- Background Music (BGM: thai1.mp3) ---------- */
-let bgmAudio = new Audio('thai1.mp3');
+let bgmAudio = new Audio('./thai1.mp3');
 bgmAudio.loop = true;
 bgmAudio.volume = 0.5;
 let currentBgmVolume = 0.5;
