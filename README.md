@@ -83,13 +83,14 @@ npm start
 - HTML, CSS, JavaScript (HTML5 Canvas)
 - Node.js + Express
 - ฟอนต์ Mali จาก Google Fonts
-- สร้างโค้ดด้วย LLM: [ระบุชื่อและเวอร์ชันโมเดล เช่น Gemini … / Claude … / ChatGPT …]
+- สร้างโค้ดด้วย LLM: Claude / ChatGPT / Google Ai Studio
 
 ## 🧠 เกี่ยวกับ Prompt Engineering
 
 โครงงานนี้ใช้เทคนิค Prompt Engineering [ระบุเทคนิคที่ใช้จริง เช่น Role/Persona, CRISPE, Iterative Refinement] และปรับปรุง Prompt หลายรอบจนได้เกมเวอร์ชันปัจจุบัน
 
-รายละเอียด Prompt ทุกเวอร์ชัน ผลลัพธ์ และปัญหาที่พบ อยู่ในรายงานโครงงาน: [ใส่ลิงก์รายงาน Google Docs]
+รายละเอียด Prompt ทุกเวอร์ชัน ผลลัพธ์ และปัญหาที่พบ อยู่ในรายงานโครงงาน: 
+https://docs.google.com/document/d/1zfCDjmy2lUQCZzoRJznfbh3B98lyrQ6a/edit?usp=sharing&ouid=108631974720458210751&rtpof=true&sd=true
 
 ## 📌 ข้อจำกัด
 
