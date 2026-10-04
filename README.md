@@ -3,6 +3,7 @@
 เกมเว็บแนววิ่งหลบสิ่งกีดขวางกลางถนนน้ำท่วมกรุงเทพฯ พาเป็ดเปลี่ยนเลน กระโดดหลบ และสะบัดเชือกให้ห่วงยางพุ่งไปช่วยคนที่กำลังจมน้ำ
 
 Version Dev: https://where-is-the-duck-going-ecru.vercel.app/
+
 Version Public: https://where-is-the-duck-going-2.ai.studio/
 
 เกมนี้สร้างด้วยการสั่งงาน **Large Language Model (LLM)** ผ่าน Prompt ที่ทีมออกแบบเอง เป็นส่วนหนึ่งของโครงงานวิชา **040223373 Generative AI and Prompt Engineering** (ภาคเรียนที่ 1/2569) ภาควิชาคณิตศาสตร์ คณะวิทยาศาสตร์ประยุกต์ มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าพระนครเหนือ
